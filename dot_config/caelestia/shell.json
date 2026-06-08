@@ -1,0 +1,27 @@
+{
+    "bar": {
+        "persistent": true
+    },
+    "general": {
+        "apps": {
+            "audio": [
+                "pavucontrol"
+            ],
+            "explorer": [
+                "nautilus"
+            ],
+            "terminal": [
+                "kitty"
+            ]
+        }
+    },
+    "launcher": {
+        "favouriteApps": [
+            "kitty",
+            "nautilus",
+            "firefox",
+            "vesktop",
+            "code"
+        ]
+    }
+}
