@@ -33,6 +33,8 @@ Item {
     readonly property alias utilities: utilities
     readonly property alias toasts: toasts
     readonly property alias sidebar: sidebar
+    readonly property alias overview: overview
+
 
     anchors.fill: parent
     anchors.margins: borderThickness
@@ -152,5 +154,14 @@ Item {
         anchors.bottom: utilities.top
         anchors.right: parent.right
         anchors.topMargin: -notifications.anchors.topMargin
+    }
+
+    Overview {
+        id: overview
+
+        screen: root.screen
+        visibilities: root.visibilities
+
+        anchors.fill: parent
     }
 }
