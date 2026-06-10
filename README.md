@@ -76,7 +76,8 @@ yay -S --needed \
     swww \
     linux-wallpaperengine-git \
     waypaper \
-    wallust
+    wallust \
+    vicinae
 ```
 
 *Description rapide :*
@@ -85,6 +86,7 @@ yay -S --needed \
 * `linux-wallpaperengine-git` : Moteur pour lire les fonds d'écran du Steam Workshop (Wallpaper Engine).
 * `waypaper` : L'interface graphique pour choisir et appliquer facilement vos fonds d'écran.
 * `wallust` : Générateur automatique de schémas de couleurs basé sur votre fond d'écran.
+* `vicinae` : Le lanceur d'applications rapide (style Raycast) lancé en arrière-plan.
 
 ---
 
@@ -95,3 +97,34 @@ yay -S --needed \
    * Ouvrez Steam et téléchargez vos fonds d'écran dans Wallpaper Engine.
    * Lancez `waypaper`, choisissez `linux-wallpaperengine` comme backend, et sélectionnez votre fond d'écran.
 3. Pour EasyEffects, ouvrez l'application une première fois afin qu'elle charge tes configurations de filtres et d'égaliseur depuis `~/.config/easyeffects/db/`.
+
+---
+
+## 4. Configuration de Quickshell et Caelestia-Shell
+
+Caelestia-Shell est une configuration unifiée écrite en QML pour le gestionnaire d'interface **Quickshell**. Il n'y a pas besoin de compiler l'interface manuellement car c'est un langage interprété (QML/Qt6).
+
+### A. Structure des dossiers
+Quickshell cherche ses configurations sous `~/.config/quickshell/<nom-de-la-config>/shell.qml`.
+Chezmoi va automatiquement restaurer le dossier Caelestia à cet emplacement :
+`~/.config/quickshell/caelestia/`
+
+### B. Tester et lancer Caelestia-Shell
+Pour lancer Caelestia en arrière-plan (mode daemon) :
+```bash
+# Lancer Caelestia-Shell
+qs -c caelestia -d
+```
+
+Si vous modifiez les fichiers QML et voulez recharger l'interface à la volée :
+```bash
+# Tuer l'instance active et redémarrer
+qs kill -c caelestia && qs -c caelestia -d
+```
+
+### C. Lancement automatique au démarrage d'Hyprland
+Le lancement automatique est configuré dans votre fichier `~/.config/hypr/UserConfigs/Startup_Apps.conf` via la ligne :
+```ini
+exec-once = qs -c caelestia -d
+```
+Cela remplace automatiquement Waybar et SwayNC d'origine au chargement d'Hyprland.
