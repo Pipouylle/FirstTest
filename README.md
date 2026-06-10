@@ -54,7 +54,16 @@ sudo pacman -S --needed \
 
 ---
 
-### B. Paquets AUR (via un helper comme `yay` ou `paru`)
+### B. Outils de compilation (Requis pour compiler les paquets AUR)
+Avant d'installer les paquets de l'AUR, installez les outils de compilation essentiels :
+
+```bash
+sudo pacman -S --needed base-devel cmake meson ninja git
+```
+
+---
+
+### C. Paquets AUR (via un helper comme `yay` ou `paru`)
 Installez-les depuis l'AUR :
 
 ```bash
