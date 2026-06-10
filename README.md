@@ -32,7 +32,9 @@ sudo pacman -S --needed \
     hyprland \
     hypridle \
     hyprlock \
+    hyprpolkitagent \
     easyeffects \
+    rofi \
     kitty \
     wl-clipboard \
     cliphist \
@@ -46,7 +48,9 @@ sudo pacman -S --needed \
 
 *Description rapide :*
 * `hyprland`, `hypridle`, `hyprlock` : Le compositeur de fenêtres, le gestionnaire d'inactivité et l'écran de verrouillage.
+* `hyprpolkitagent` : L'agent Polkit pour gérer l'authentification et les droits système en mode graphique.
 * `easyeffects` : Égaliseur et traitement du son (avec tes préréglages).
+* `rofi` : Le menu de sélection de fonds d'écran et lanceur d'applications.
 * `kitty` : Le terminal par défaut.
 * `wl-clipboard`, `cliphist` : Gestionnaire de presse-papiers sous Wayland.
 * `jq`, `bc` : Utilitaires système requis par les scripts de fond d'écran et de météo.
