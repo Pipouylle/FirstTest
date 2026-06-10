@@ -79,7 +79,9 @@ yay -S --needed \
     linux-wallpaperengine-git \
     waypaper \
     wallust \
-    vicinae
+    vicinae \
+    caelestia-cli \
+    caelestia-shell
 ```
 
 *Description rapide :*
@@ -89,6 +91,8 @@ yay -S --needed \
 * `waypaper` : L'interface graphique pour choisir et appliquer facilement vos fonds d'écran.
 * `wallust` : Générateur automatique de schémas de couleurs basé sur votre fond d'écran.
 * `vicinae` : Le lanceur d'applications rapide (style Raycast) lancé en arrière-plan.
+* `caelestia-cli` : L'outil en ligne de commande principal (CLI) pour gérer les dotfiles de Caelestia.
+* `caelestia-shell` : Le paquet de l'interface qui compile les composants QML et les plugins système pour le shell.
 
 ---
 
