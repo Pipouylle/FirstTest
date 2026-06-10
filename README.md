@@ -37,6 +37,9 @@ sudo pacman -S --needed \
     rofi \
     kitty \
     zsh \
+    lsd \
+    fastfetch \
+    fzf \
     wl-clipboard \
     cliphist \
     jq \
@@ -54,6 +57,9 @@ sudo pacman -S --needed \
 * `rofi` : Le menu de sélection de fonds d'écran et lanceur d'applications.
 * `kitty` : Le terminal par défaut.
 * `zsh` : Le shell alternatif interactif utilisé par défaut.
+* `lsd` : Une alternative moderne à `ls` avec des couleurs et des icônes (utilisée dans les alias de `.zshrc`).
+* `fastfetch` : Affiche les informations système au démarrage du terminal.
+* `fzf` : Le moteur de recherche floue (Fuzzy Finder) utilisé pour la recherche d'historique dans le terminal.
 * `wl-clipboard`, `cliphist` : Gestionnaire de presse-papiers sous Wayland.
 * `jq`, `bc` : Utilitaires système requis par les scripts de fond d'écran et de météo.
 * `ffmpeg`, `imagemagick` : Requis par le script de fond d'écran pour générer les aperçus vidéo et GIF dans Rofi.
