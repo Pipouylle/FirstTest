@@ -1,0 +1,6 @@
+[soe][Limiter#0]
+bypass=true
+gainBoost=false
+oversampling=21
+release=10
+threshold=-1
