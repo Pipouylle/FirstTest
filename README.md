@@ -190,3 +190,29 @@ Si vous ne souhaitez pas installer de gestionnaire de connexion (pas de SDDM), v
    ```
    *Note : la commande `exec` est importante car elle remplace le processus du shell de connexion par Hyprland, ce qui sécurise le TTY sous-jacent.*
 
+---
+
+## 6. Synchronisation et Mises à jour (Récupérer les changements distants)
+
+Si vous apportez des modifications à vos configurations depuis un autre PC et les poussez sur GitHub, vous pouvez les récupérer et les appliquer sur votre machine locale de deux façons :
+
+### Option A : Tout faire en une seule commande (Recommandé)
+```bash
+chezmoi update
+```
+*Cette commande télécharge les modifications depuis GitHub (via un `git pull` interne) et les applique directement sur vos fichiers locaux.*
+
+### Option B : Étape par étape (Sécurisé, pour valider les changements)
+1. **Télécharger les nouveautés** depuis GitHub sans les appliquer immédiatement :
+   ```bash
+   chezmoi git pull
+   ```
+2. **Vérifier les différences** (voir ce qui va changer sur votre machine) :
+   ```bash
+   chezmoi diff
+   ```
+3. **Appliquer les nouveautés** sur votre système réel :
+   ```bash
+   chezmoi apply
+   ```
+
