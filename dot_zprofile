@@ -1,0 +1,12 @@
+#if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
+#       Hyprland 
+#fi
+
+
+# Added by Toolbox App
+export PATH="$PATH:/home/timothe/.local/share/JetBrains/Toolbox/scripts"
+
+
+
+# Added by Antigravity CLI installer
+export PATH="/home/timothe/.local/bin:$PATH"

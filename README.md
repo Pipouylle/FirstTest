@@ -33,6 +33,7 @@ sudo pacman -S --needed \
     hypridle \
     hyprlock \
     hyprpolkitagent \
+    sddm \
     easyeffects \
     rofi \
     kitty \
@@ -53,6 +54,7 @@ sudo pacman -S --needed \
 *Description rapide :*
 * `hyprland`, `hypridle`, `hyprlock` : Le compositeur de fenêtres, le gestionnaire d'inactivité et l'écran de verrouillage.
 * `hyprpolkitagent` : L'agent Polkit pour gérer l'authentification et les droits système en mode graphique.
+* `sddm` : Le gestionnaire de connexion graphique (Display Manager) pour démarrer la session.
 * `easyeffects` : Égaliseur et traitement du son (avec tes préréglages).
 * `rofi` : Le menu de sélection de fonds d'écran et lanceur d'applications.
 * `kitty` : Le terminal par défaut.
@@ -157,3 +159,34 @@ Le lancement automatique est configuré dans votre fichier `~/.config/hypr/UserC
 exec-once = qs -c caelestia -d
 ```
 Cela remplace automatiquement Waybar et SwayNC d'origine au chargement d'Hyprland.
+
+---
+
+## 5. Démarrage automatique sur Hyprland (Boot automatique)
+
+Pour que l'ordinateur démarre automatiquement sur Hyprland à l'allumage, vous avez deux approches :
+
+### Méthode 1 : Avec écran de connexion SDDM (Recommandé)
+1. **Activer le service SDDM** pour qu'il se lance au démarrage :
+   ```bash
+   sudo systemctl enable sddm
+   ```
+2. **(Optionnel) Activer la connexion automatique** (sans avoir à taper votre mot de passe) :
+   Créez ou modifiez le fichier `/etc/sddm.conf.d/autologin.conf` :
+   ```ini
+   [Autologin]
+   User=timothe
+   Session=hyprland
+   ```
+
+### Méthode 2 : Sans gestionnaire graphique (Lancement direct depuis le TTY)
+Si vous ne souhaitez pas installer de gestionnaire de connexion (pas de SDDM), vous pouvez utiliser le fichier de profil utilisateur **`.zprofile`** (géré par chezmoi) :
+1. Ouvrez `~/.zprofile` (qui a été restauré par chezmoi).
+2. Décommentez les lignes suivantes au début du fichier :
+   ```bash
+   if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
+          exec Hyprland
+   fi
+   ```
+   *Note : la commande `exec` est importante car elle remplace le processus du shell de connexion par Hyprland, ce qui sécurise le TTY sous-jacent.*
+
