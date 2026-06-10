@@ -36,6 +36,7 @@ sudo pacman -S --needed \
     easyeffects \
     rofi \
     kitty \
+    zsh \
     wl-clipboard \
     cliphist \
     jq \
@@ -52,6 +53,7 @@ sudo pacman -S --needed \
 * `easyeffects` : Égaliseur et traitement du son (avec tes préréglages).
 * `rofi` : Le menu de sélection de fonds d'écran et lanceur d'applications.
 * `kitty` : Le terminal par défaut.
+* `zsh` : Le shell alternatif interactif utilisé par défaut.
 * `wl-clipboard`, `cliphist` : Gestionnaire de presse-papiers sous Wayland.
 * `jq`, `bc` : Utilitaires système requis par les scripts de fond d'écran et de météo.
 * `ffmpeg`, `imagemagick` : Requis par le script de fond d'écran pour générer les aperçus vidéo et GIF dans Rofi.
@@ -97,6 +99,23 @@ yay -S --needed \
    * Ouvrez Steam et téléchargez vos fonds d'écran dans Wallpaper Engine.
    * Lancez `waypaper`, choisissez `linux-wallpaperengine` comme backend, et sélectionnez votre fond d'écran.
 3. Pour EasyEffects, ouvrez l'application une première fois afin qu'elle charge tes configurations de filtres et d'égaliseur depuis `~/.config/easyeffects/db/`.
+4. **Configuration de Zsh & Oh My Zsh** :
+   * Installez Oh My Zsh :
+     ```bash
+     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+     ```
+   * Installez les deux plugins de complétion et coloration syntaxique :
+     ```bash
+     # zsh-syntax-highlighting
+     git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
+     
+     # zsh-autosuggestions
+     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
+     ```
+   * Ré-appliquez chezmoi pour restaurer le fichier `.zshrc` configuré :
+     ```bash
+     chezmoi apply
+     ```
 
 ---
 
