@@ -89,7 +89,8 @@ yay -S --needed \
     wallust \
     vicinae \
     caelestia-cli \
-    caelestia-shell
+    caelestia-shell \
+    simple-sddm-theme-2-git
 ```
 
 *Description rapide :*
@@ -101,6 +102,7 @@ yay -S --needed \
 * `vicinae` : Le lanceur d'applications rapide (style Raycast) lancé en arrière-plan.
 * `caelestia-cli` : L'outil en ligne de commande principal (CLI) pour gérer les dotfiles de Caelestia.
 * `caelestia-shell` : Le paquet de l'interface qui compile les composants QML et les plugins système pour le shell.
+* `simple-sddm-theme-2-git` : Le thème minimaliste et personnalisable pour l'écran de connexion SDDM.
 
 ---
 
@@ -171,7 +173,25 @@ Pour que l'ordinateur démarre automatiquement sur Hyprland à l'allumage, vous 
    ```bash
    sudo systemctl enable sddm
    ```
-2. **(Optionnel) Activer la connexion automatique** (sans avoir à taper votre mot de passe) :
+2. **Configurer le thème SDDM et la synchronisation du fond d'écran** :
+   * Installez le thème `simple-sddm-theme-2-git` depuis l'AUR.
+   * Créez ou modifiez `/etc/sddm.conf.d/theme.conf` avec root :
+     ```ini
+     [Theme]
+     Current=simple-sddm-2
+     ```
+   * Pour que le fond d'écran de l'écran de connexion se synchronise automatiquement et sans mot de passe avec votre fond d'écran actif :
+     ```bash
+     # 1. Créer le fichier de destination et donner les droits à votre utilisateur
+     sudo touch /var/lib/sddm_wallpaper.jpg
+     sudo chown timothe:timothe /var/lib/sddm_wallpaper.jpg
+
+     # 2. Créer le lien symbolique du thème vers ce fichier
+     sudo rm -f /usr/share/sddm/themes/simple-sddm-2/Backgrounds/default
+     sudo ln -sf /var/lib/sddm_wallpaper.jpg /usr/share/sddm/themes/simple-sddm-2/Backgrounds/default
+     ```
+     Le script `set_wallpaper.py` copiera automatiquement le fond d'écran actuel (ou son aperçu haute résolution si c'est un fond animé) dans `/var/lib/sddm_wallpaper.jpg`.
+3. **(Optionnel) Activer la connexion automatique** (sans avoir à taper votre mot de passe) :
    Créez ou modifiez le fichier `/etc/sddm.conf.d/autologin.conf` :
    ```ini
    [Autologin]
@@ -215,4 +235,28 @@ chezmoi update
    ```bash
    chezmoi apply
    ```
+
+---
+
+## 7. Partage d'écran sous Wayland (WebRTC / Discord / Meet)
+
+Pour partager votre écran entier ou d'autres applications sous Wayland/Hyprland (et pas seulement un onglet du navigateur), le système utilise **PipeWire** et **xdg-desktop-portal-hyprland**.
+
+### A. Démarrage des portails
+Assurez-vous que le script de portails est activé au démarrage dans votre fichier `~/.config/hypr/UserConfigs/Startup_Apps.conf` :
+```ini
+exec-once = $scriptsDir/PortalHyprland.sh
+```
+
+Pour les démarrer manuellement sans redémarrer votre session :
+```bash
+~/.config/hypr/scripts/PortalHyprland.sh
+```
+
+### B. Configuration du navigateur (Chromium, Brave, Chrome)
+Pour que le navigateur puisse interagir avec le portail de capture de Wayland :
+1. Ouvrez `chrome://flags` dans votre navigateur.
+2. Recherchez **Preferred Ozone platform**.
+3. Remplacez **Default** par **Auto** (ou **Wayland**).
+4. Relancez le navigateur.
 
