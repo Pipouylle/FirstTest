@@ -1,4 +1,7 @@
 {
+    "background": {
+        "wallpaperEnabled": false
+    },
     "bar": {
         "persistent": true
     },
