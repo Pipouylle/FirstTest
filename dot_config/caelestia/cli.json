@@ -1,5 +1,5 @@
 {
     "wallpaper": {
-        "postHook": "waypaper --wallpaper \"$WALLPAPER_PATH\""
+        "postHook": "/home/timothe/.config/caelestia/set_wallpaper.py \"$WALLPAPER_PATH\""
     }
 }
