@@ -69,6 +69,15 @@ def main():
     except Exception as e:
         log_message(f"Error writing path.txt: {e}")
 
+    # Copy the resolved static preview to SDDM's placeholder file
+    sddm_placeholder = Path("/var/lib/sddm_wallpaper.jpg")
+    try:
+        import shutil
+        shutil.copy(str(target_path), str(sddm_placeholder))
+        log_message(f"Successfully synced wallpaper to SDDM placeholder: {sddm_placeholder}")
+    except Exception as e:
+        log_message(f"Error syncing to SDDM: {e}")
+
     # Run waypaper
     log_message(f"Running waypaper --wallpaper {target_path}")
     res = subprocess.run(["waypaper", "--wallpaper", str(target_path)], capture_output=True, text=True)

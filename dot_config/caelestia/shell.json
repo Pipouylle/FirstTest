@@ -1,6 +1,6 @@
 {
     "background": {
-        "wallpaperEnabled": false
+        "wallpaperEnabled": true
     },
     "bar": {
         "persistent": true
