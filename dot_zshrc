@@ -10,6 +10,9 @@ plugins=(
     archlinux
     zsh-autosuggestions
     zsh-syntax-highlighting
+    docker	
+    docker-compose
+    watch
 )
 
 source $ZSH/oh-my-zsh.sh
