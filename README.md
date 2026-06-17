@@ -125,6 +125,9 @@ yay -S --needed \
      
      # zsh-autosuggestions
      git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
+
+     # watch
+     git clone https://github.com/enrico9034/watch-plugin-zsh.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/watch
      ```
    * Ré-appliquez chezmoi pour restaurer le fichier `.zshrc` configuré :
      ```bash
