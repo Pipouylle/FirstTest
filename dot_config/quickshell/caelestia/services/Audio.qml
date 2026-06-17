@@ -7,6 +7,7 @@ import Quickshell.Services.Pipewire
 import Caelestia
 import Caelestia.Config
 import Caelestia.Services
+import qs.components.misc
 
 Singleton {
     id: root
@@ -179,5 +180,28 @@ Singleton {
         }
 
         target: "audio"
+    }
+
+    // Global Volume Shortcuts
+    CustomShortcut {
+        name: "volumeUp"
+        description: "Increase volume"
+        onPressed: root.incrementVolume()
+    }
+
+    CustomShortcut {
+        name: "volumeDown"
+        description: "Decrease volume"
+        onPressed: root.decrementVolume()
+    }
+
+    CustomShortcut {
+        name: "volumeMute"
+        description: "Mute/unmute volume"
+        onPressed: {
+            if (sink?.ready && sink?.audio) {
+                sink.audio.muted = !sink.audio.muted;
+            }
+        }
     }
 }

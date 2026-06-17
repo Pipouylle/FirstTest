@@ -1,0 +1,5 @@
+{
+    "wallpaper": {
+        "postHook": "waypaper --wallpaper \"$WALLPAPER_PATH\""
+    }
+}

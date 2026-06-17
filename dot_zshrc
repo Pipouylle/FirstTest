@@ -13,6 +13,7 @@ plugins=(
 )
 
 source $ZSH/oh-my-zsh.sh
+source /usr/share/nvm/init-nvm.sh
 
 # Check archlinux plugin commands here
 # https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/archlinux

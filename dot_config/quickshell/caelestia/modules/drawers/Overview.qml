@@ -50,6 +50,15 @@ Item {
         onClicked: visibilities.overview = false
     }
 
+    Connections {
+        target: Hypr
+        function onActiveWsIdChanged() {
+            if (root.active) {
+                root.visibilities.overview = false;
+            }
+        }
+    }
+
     // Main layout
     ColumnLayout {
         anchors.fill: parent
@@ -110,6 +119,16 @@ Item {
                         radius: Tokens.rounding.large
                         border.width: isActive ? 2 : 1
                         border.color: isActive ? Colours.palette.m3primary : Colours.layer(Colours.palette.m3outlineVariant, 2)
+
+                        MouseArea {
+                            id: wsMouseArea
+                            anchors.fill: parent
+                            z: -1
+                            onClicked: {
+                                Hypr.dispatch("workspace " + wsCard.modelData.id);
+                                root.visibilities.overview = false;
+                            }
+                        }
                         
                         ColumnLayout {
                             anchors.fill: parent
@@ -122,7 +141,7 @@ Item {
                                 spacing: Tokens.spacing.small
                                 
                                 StyledText {
-                                    text: qsTr("Workspace %1").arg(wsCard.modelData.name)
+                                    text: wsCard.modelData.monitor ? qsTr("Workspace %1 (%2)").arg(wsCard.modelData.name).arg(wsCard.modelData.monitor.name) : qsTr("Workspace %1").arg(wsCard.modelData.name)
                                     font: Tokens.font.body.builders.large.weight(Font.Bold).build()
                                     color: wsCard.isActive ? Colours.palette.m3primary : Colours.palette.m3onSurface
                                     Layout.fillWidth: true
@@ -137,20 +156,22 @@ Item {
                             }
                             
                             // Windows Flow inside Workspace
-                            StyledFlickable {
+                            Item {
+                                id: workspaceWindowsArea
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                clip: true
-                                contentWidth: width
-                                contentHeight: windowsGrid.implicitHeight
-                                
-                                GridLayout {
-                                    id: windowsGrid
-                                    width: parent.width
-                                    columns: 2
-                                    rowSpacing: Tokens.spacing.small
-                                    columnSpacing: Tokens.spacing.small
+
+                                readonly property real monitorWidth: wsCard.modelData.monitor ? wsCard.modelData.monitor.lastIpcObject.width : 1920
+                                readonly property real monitorHeight: wsCard.modelData.monitor ? wsCard.modelData.monitor.lastIpcObject.height : 1080
+                                readonly property real monitorAspect: monitorWidth / monitorHeight
+
+                                Item {
+                                    id: screenContainer
+                                    anchors.centerIn: parent
                                     
+                                    width: (parent.width / parent.height > workspaceWindowsArea.monitorAspect) ? (parent.height * workspaceWindowsArea.monitorAspect) : parent.width
+                                    height: (parent.width / parent.height > workspaceWindowsArea.monitorAspect) ? parent.height : (parent.width / workspaceWindowsArea.monitorAspect)
+
                                     Repeater {
                                         model: ScriptModel {
                                             values: Hypr.toplevels.values.filter(t => t.workspace?.id === wsCard.modelData.id)
@@ -158,56 +179,52 @@ Item {
                                         
                                         delegate: StyledRect {
                                             id: windowCard
-                                            
                                             required property var modelData // HyprlandToplevel
                                             
-                                            Layout.fillWidth: true
-                                            implicitHeight: 110
-                                            
+                                            readonly property real relX: modelData.lastIpcObject.at[0] - (wsCard.modelData.monitor ? wsCard.modelData.monitor.lastIpcObject.x : 0)
+                                            readonly property real relY: modelData.lastIpcObject.at[1] - (wsCard.modelData.monitor ? wsCard.modelData.monitor.lastIpcObject.y : 0)
+                                            readonly property real winW: modelData.lastIpcObject.size[0]
+                                            readonly property real winH: modelData.lastIpcObject.size[1]
+
+                                            x: relX * screenContainer.width / workspaceWindowsArea.monitorWidth
+                                            y: relY * screenContainer.height / workspaceWindowsArea.monitorHeight
+                                            width: winW * screenContainer.width / workspaceWindowsArea.monitorWidth
+                                            height: winH * screenContainer.height / workspaceWindowsArea.monitorHeight
+
                                             color: Colours.tPalette.m3surface
                                             radius: Tokens.rounding.medium
                                             border.width: mouseArea.containsMouse ? 1.5 : 1
                                             border.color: mouseArea.containsMouse ? Colours.palette.m3primary : Colours.layer(Colours.palette.m3outlineVariant, 2)
-                                            
                                             scale: mouseArea.containsMouse ? 1.02 : 1.0
-                                            
-                                            Behavior on scale {
-                                                Anim { duration: 150 }
-                                            }
-                                            
-                                            Behavior on border.color {
-                                                CAnim { duration: 150 }
-                                            }
+
+                                            Behavior on scale { Anim { duration: 150 } }
+                                            Behavior on border.color { CAnim { duration: 150 } }
 
                                             MouseArea {
                                                 id: mouseArea
                                                 anchors.fill: parent
                                                 hoverEnabled: true
-                                                
                                                 onClicked: {
-                                                    // Focus the selected window
                                                     Hypr.dispatch("focuswindow address:0x" + windowCard.modelData.address);
-                                                    // If on a different workspace, switch to it
                                                     if (windowCard.modelData.workspace.id !== Hypr.activeWsId) {
                                                         Hypr.dispatch("workspace " + windowCard.modelData.workspace.id);
                                                     }
                                                     root.visibilities.overview = false;
                                                 }
                                             }
-                                            
+
                                             ColumnLayout {
                                                 anchors.fill: parent
                                                 anchors.margins: Tokens.padding.small
                                                 spacing: Tokens.spacing.extraSmall
-                                                
-                                                // Window App Icon & Title
+
                                                 RowLayout {
                                                     Layout.fillWidth: true
                                                     spacing: Tokens.spacing.extraSmall
                                                     
                                                     IconImage {
                                                         asynchronous: true
-                                                        implicitSize: 18
+                                                        implicitSize: 14
                                                         source: Icons.getAppIcon(windowCard.modelData.lastIpcObject.class, "image-missing")
                                                         Layout.alignment: Qt.AlignVCenter
                                                     }
@@ -221,10 +238,9 @@ Item {
                                                         Layout.alignment: Qt.AlignVCenter
                                                     }
                                                     
-                                                    // Close window button
                                                     Item {
-                                                        implicitWidth: 22
-                                                        implicitHeight: 22
+                                                        implicitWidth: 16
+                                                        implicitHeight: 16
                                                         Layout.alignment: Qt.AlignVCenter
 
                                                         StateLayer {
@@ -244,7 +260,6 @@ Item {
                                                     }
                                                 }
                                                 
-                                                // Live Window Preview
                                                 StyledClippingRect {
                                                     Layout.fillWidth: true
                                                     Layout.fillHeight: true
@@ -252,9 +267,17 @@ Item {
                                                     radius: Tokens.rounding.small
                                                     
                                                     ScreencopyView {
-                                                        anchors.fill: parent
+                                                        id: windowPreview
+                                                        anchors.centerIn: parent
                                                         captureSource: windowCard.modelData.wayland ?? null
                                                         live: root.active && windowCard.visible
+
+                                                        readonly property real w: windowCard.modelData.lastIpcObject.size[0]
+                                                        readonly property real h: windowCard.modelData.lastIpcObject.size[1]
+                                                        readonly property real aspect: (w > 0 && h > 0) ? (w / h) : 1.6
+
+                                                        constraintSize.width: (parent.width / parent.height > aspect) ? (parent.height * aspect) : parent.width
+                                                        constraintSize.height: (parent.width / parent.height > aspect) ? parent.height : (parent.width / aspect)
                                                     }
                                                 }
                                             }

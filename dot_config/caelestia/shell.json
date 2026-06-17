@@ -16,12 +16,17 @@
         }
     },
     "launcher": {
+        "enabled": false,
         "favouriteApps": [
             "kitty",
             "nautilus",
             "firefox",
             "vesktop",
             "code"
-        ]
+        ],
+        "showOnHover": false
+    },
+    "paths": {
+        "wallpaperDir": "~/.cache/waypaper"
     }
 }

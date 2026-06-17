@@ -43,7 +43,10 @@ CustomMouseArea {
 
     function inTopPanel(panel: Item, x: real, y: real): bool {
         const panelHeight = panel.height * (1 - (panel.offsetScale ?? 0)); // qmllint disable missing-property
-        return y < Math.max(Config.border.minThickness, (visibilities.barIsTop ? 60 : Config.border.thickness) + panelHeight) && withinPanelWidth(panel, x, y);
+        const threshold = (panelHeight > 0)
+            ? ((visibilities.barIsTop ? 60 : Config.border.thickness) + panelHeight)
+            : 3; // Trigger opening only when cursor is at the absolute top (y < 3px)
+        return y < Math.max(Config.border.minThickness, threshold) && withinPanelWidth(panel, x, y);
     }
 
     function inBottomPanel(panel: Item, x: real, y: real, isCorner = false): bool {
