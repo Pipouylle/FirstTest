@@ -46,6 +46,14 @@ def main():
         if found_path:
             target_path = found_path
 
+    # Update Caelestia's path.txt so the QML shell renders the high-res file
+    path_txt = Path.home() / ".local/state/caelestia/wallpaper/path.txt"
+    try:
+        path_txt.parent.mkdir(parents=True, exist_ok=True)
+        path_txt.write_text(str(target_path))
+    except Exception as e:
+        print(f"Error writing path.txt: {e}")
+
     # Run waypaper
     subprocess.run(["waypaper", "--wallpaper", str(target_path)])
 
