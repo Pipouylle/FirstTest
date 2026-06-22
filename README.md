@@ -48,7 +48,8 @@ sudo pacman -S --needed \
     ffmpeg \
     imagemagick \
     git \
-    xdg-desktop-portal-hyprland
+    xdg-desktop-portal-hyprland \
+    tree
 ```
 
 *Description rapide :*
