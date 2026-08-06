@@ -1,4 +1,9 @@
 {
+    "appearance": {
+        "transparency": {
+            "enabled": false
+        }
+    },
     "background": {
         "wallpaperEnabled": true
     },
