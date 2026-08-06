@@ -21,6 +21,14 @@ Item {
     readonly property int padding: Tokens.padding.large
     readonly property int clampedPadding: CUtils.clamp(padding - Config.border.thickness, 0, padding)
 
+    function groupKey(notif: var): string {
+        return notif.appName === "" ? `\u0000id:${notif.id}` : notif.appName;
+    }
+
+    function groupFor(key: string): list<var> {
+        return Notifs.popups.filter(n => n && !n.closed && root.groupKey(n) === key);
+    }
+
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     anchors.right: parent.right
@@ -68,8 +76,26 @@ Item {
         StyledListView {
             id: list
 
+            // Le modele porte des CLES D'APP (strings), pas des NotifData. Une
+            // cle = une carte, et son identite reste stable tant que l'app a au
+            // moins un popup vivant : une nouvelle notification incremente le
+            // compteur de la carte existante au lieu de recreer un delegate.
+            // Passer des objets JS fraichement construits ferait au contraire
+            // recycler tout le delegate a chaque notification (animations qui
+            // sautent, popups qui clignotent).
+            // Meme cle que la sidebar (appName), avec repli sur l'id quand
+            // l'app ne se nomme pas, sinon toutes les notifications anonymes
+            // fusionneraient dans une seule carte.
             model: ScriptModel {
-                values: Notifs.popups.filter(n => !n.closed)
+                values: {
+                    const keys = new Map();
+                    for (const n of Notifs.popups) {
+                        if (!n || n.closed)
+                            continue;
+                        keys.set(root.groupKey(n), null);
+                    }
+                    return [...keys.keys()];
+                }
             }
 
             anchors.fill: parent
@@ -143,10 +169,27 @@ Item {
     component NotifWrapper: Item {
         id: wrapper
 
-        required property NotifData modelData
+        // Cle d'app, pas un NotifData (cf. commentaire sur le modele).
+        required property string modelData
         required property int index
         readonly property alias nonAnimHeight: notif.nonAnimHeight
         property int idx
+
+        readonly property list<var> group: root.groupFor(modelData)
+
+        // Representant affiche : la notification la plus recente du groupe
+        // (Notifs.list est trie du plus recent au plus ancien). On le verrouille
+        // ensuite : Notification.qml appelle lock() dessus, donc il survit tant
+        // que la carte existe. La liaison initiale suffit a demarrer, puis on
+        // latche pour ne jamais retomber sur null pendant l'animation de sortie,
+        // quand le groupe se vide avant la destruction du delegate.
+        property NotifData rep: group[0] ?? null
+
+        onGroupChanged: {
+            const newest = group[0];
+            if (newest)
+                rep = newest;
+        }
 
         onIndexChanged: {
             if (index !== -1)
@@ -207,7 +250,8 @@ Item {
             Notification {
                 id: notif
 
-                modelData: wrapper.modelData
+                modelData: wrapper.rep
+                groupNotifs: wrapper.group
                 implicitWidth: root.implicitWidth - root.padding - root.clampedPadding
             }
         }

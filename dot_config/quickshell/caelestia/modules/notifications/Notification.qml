@@ -16,6 +16,30 @@ StyledRect {
     id: root
 
     required property NotifData modelData
+
+    // Notifications regroupees derriere cette carte (modelData est la plus
+    // recente du lot, celle qui est affichee). Vide = carte non groupee, on
+    // retombe alors sur le seul modelData.
+    property list<var> groupNotifs: []
+    readonly property list<var> effectiveGroup: groupNotifs.length > 0 ? groupNotifs : [modelData]
+    readonly property int groupCount: effectiveGroup.length
+
+    // Une notification fermee est retiree de Notifs.list puis detruite, donc on
+    // filtre avant d'iterer pour ne jamais toucher un objet mort.
+    function forEachInGroup(fn: var): void {
+        for (const n of root.effectiveGroup)
+            if (n && !n.closed)
+                fn(n);
+    }
+
+    function dismissGroup(): void {
+        forEachInGroup(n => n.popup = false);
+    }
+
+    function closeGroup(): void {
+        forEachInGroup(n => n.close());
+    }
+
     readonly property bool hasImage: modelData.image.length > 0
     readonly property bool hasAppIcon: modelData.appIcon.length > 0
     readonly property int bodyTextFormat: /[<*_`#\[\]]/.test(modelData.body) ? Text.MarkdownText : Text.PlainText
@@ -49,29 +73,29 @@ StyledRect {
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
         preventStealing: true
 
-        onEntered: root.modelData.timer.stop()
+        onEntered: root.forEachInGroup(n => n.timer.stop())
         onExited: {
             if (!pressed)
-                root.modelData.timer.start();
+                root.forEachInGroup(n => n.timer.start());
         }
 
         drag.target: parent
         drag.axis: Drag.XAxis
 
         onPressed: event => {
-            root.modelData.timer.stop();
+            root.forEachInGroup(n => n.timer.stop());
             startY = event.y;
             if (event.button === Qt.MiddleButton)
-                root.modelData.close();
+                root.closeGroup();
         }
         onReleased: event => {
             if (!containsMouse)
-                root.modelData.timer.start();
+                root.forEachInGroup(n => n.timer.start());
 
             if (Math.abs(root.x) < root.implicitWidth * Config.notifs.clearThreshold)
                 root.x = 0;
             else
-                root.modelData.popup = false;
+                root.dismissGroup();
         }
         onPositionChanged: event => {
             if (pressed) {
@@ -183,6 +207,37 @@ StyledRect {
                             fontStyle: Tokens.font.icon.medium
                         }
                     }
+                }
+            }
+
+            // Pastille de comptage quand plusieurs notifications de la meme app
+            // sont repliees sur cette carte (10 mails -> une carte avec "10").
+            // Posee en overlay sur l'icone : n'entre dans aucun des calculs
+            // d'anchors/elide du bloc texte, qui sont deja tres imbriques.
+            StyledRect {
+                id: groupBadge
+
+                anchors.right: image.right
+                anchors.top: image.top
+                anchors.rightMargin: -Tokens.padding.extraSmall
+                anchors.topMargin: -Tokens.padding.extraSmall
+
+                z: 2
+                visible: root.groupCount > 1
+
+                implicitWidth: Math.max(implicitHeight, groupBadgeText.implicitWidth + Tokens.padding.small)
+                implicitHeight: groupBadgeText.implicitHeight + Tokens.padding.extraSmall
+                radius: Tokens.rounding.full
+                color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3error : Colours.palette.m3primary
+
+                StyledText {
+                    id: groupBadgeText
+
+                    anchors.centerIn: parent
+
+                    text: root.groupCount > 99 ? "99+" : root.groupCount
+                    color: root.modelData.urgency === NotificationUrgency.Critical ? Colours.palette.m3onError : Colours.palette.m3onPrimary
+                    font: Tokens.font.label.small
                 }
             }
 
