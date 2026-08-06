@@ -1,0 +1,6 @@
+# Fichiers presents dans la source mais qui ne doivent PAS etre deployes.
+# Les motifs sont compares au chemin CIBLE (donc "README.md" = "~/README.md").
+
+# Documentation du depot. Sans cette ligne chezmoi la traite comme un dotfile et
+# la recopie dans ~/README.md, ou elle se perime des que le depot avance.
+README.md

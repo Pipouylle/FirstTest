@@ -10,7 +10,7 @@ Une fois que votre nouveau système Arch Linux est installé et que vous avez ac
 
 ```bash
 # 1. Initialiser chezmoi avec votre dépôt
-chezmoi init https://github.com/Pipouylle/FirstTest.git
+chezmoi init https://gitlab.pikudev.cloud/nattet/chez-moi.git
 
 # 2. Appliquer les configurations sur votre machine
 chezmoi apply
