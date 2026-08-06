@@ -13,6 +13,10 @@ plugins=(
     docker	
     docker-compose
     watch
+    z
+    kubectl
+    kubectx
+    kubens
 )
 
 source $ZSH/oh-my-zsh.sh
@@ -25,6 +29,13 @@ source /usr/share/nvm/init-nvm.sh
 # Project page: https://gitlab.com/phoneybadger/pokemon-colorscripts#on-other-distros-and-macos
 #pokemon-colorscripts --no-title -s -r #without fastfetch
 #pokemon-colorscripts --no-title -s -r | fastfetch -c $HOME/.config/fastfetch/config-pokemon.jsonc --logo-type file-raw --logo-height 10 --logo-width 5 --logo -
+
+# Applique le colorscheme caelestia (genere a chaque changement de fond d'ecran).
+# caelestia pousse ces sequences OSC vers les terminaux DEJA ouverts, mais n'a
+# aucun moyen de les rejouer pour un terminal lance apres coup : sans ce cat, un
+# nouveau terminal repart sur la palette par defaut. A garder avant fastfetch
+# pour qu'il se dessine avec la bonne palette.
+[[ -o interactive && -t 1 && -r ~/.local/state/caelestia/sequences.txt ]] && cat ~/.local/state/caelestia/sequences.txt
 
 # fastfetch. Will be disabled if above colorscript was chosen to install
 fastfetch -c $HOME/.config/fastfetch/config-compact.jsonc
@@ -60,3 +71,4 @@ alias gem='STTY_SIZE=80x24 TERM=vt100 gemini gemini'
 # Added by Antigravity CLI installer
 export PATH="/home/timothe/.local/bin:$PATH"
 export PATH="/home/timothe/.local/bin:$PATH"
+alias clb='claude --permission-mode bypassPermissions'
