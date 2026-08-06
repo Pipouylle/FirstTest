@@ -115,15 +115,21 @@ Item {
                         implicitWidth: Math.max(300, (workspacesFlow.width - Tokens.spacing.extraLarge * 2) / 3)
                         implicitHeight: 320
                         
-                        color: isActive ? Colours.tPalette.m3surfaceContainerHighest : Colours.tPalette.m3surfaceContainer
+                        color: isActive ? Colours.tPalette.m3surfaceContainerHighest : (wsMouseArea.containsMouse ? Colours.tPalette.m3surfaceContainerHigh : Colours.tPalette.m3surfaceContainer)
                         radius: Tokens.rounding.large
-                        border.width: isActive ? 2 : 1
-                        border.color: isActive ? Colours.palette.m3primary : Colours.layer(Colours.palette.m3outlineVariant, 2)
+                        border.width: isActive || wsMouseArea.containsMouse ? 2 : 1
+                        border.color: isActive ? Colours.palette.m3primary : (wsMouseArea.containsMouse ? Colours.palette.m3secondary : Colours.layer(Colours.palette.m3outlineVariant, 2))
 
+                        Behavior on color { CAnim { duration: 150 } }
+                        Behavior on border.color { CAnim { duration: 150 } }
+
+                        // Declare avant le ColumnLayout : les vignettes de fenetres
+                        // sont donc testees en premier et gardent la priorite.
                         MouseArea {
                             id: wsMouseArea
                             anchors.fill: parent
-                            z: -1
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 Hypr.dispatch("workspace " + wsCard.modelData.id);
                                 root.visibilities.overview = false;

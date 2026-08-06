@@ -72,6 +72,17 @@ Region {
         width: panel.width * (1 - root.panels.popoutsWrapper.offsetScale)
     }
 
+    // L'overview (SUPER+Tab) remplit tout le content area. Sans cette region il
+    // n'est pas soustrait du masque d'input de la fenetre, donc les clics le
+    // traversent et vont sur les fenetres derriere. Les autres panneaux se
+    // replient a une taille nulle via offsetScale, l'overview lui garde sa
+    // taille et joue seulement sur l'opacite : on gate donc sur visible.
+    R {
+        panel: root.panels.overview
+        width: panel.visible ? panel.width : 0
+        height: panel.visible ? panel.height : 0
+    }
+
     component R: Region {
         required property Item panel
 
