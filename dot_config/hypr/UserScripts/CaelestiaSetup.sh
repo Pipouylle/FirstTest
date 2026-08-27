@@ -67,12 +67,12 @@ if [ -d "$WALLPAPER_DIR" ]; then
     FIRST_WALL=$(ls "$WALLPAPER_DIR"/*.{jpg,png,webp} 2>/dev/null | head -1)
     if [ -n "$FIRST_WALL" ]; then
         print_step "Setting initial wallpaper: $FIRST_WALL"
-        # Use swww if caelestia-shell isn't running yet
-        if pgrep -x "swww-daemon" &>/dev/null; then
-            swww img "$FIRST_WALL" --transition-type fade --transition-duration 1
-            print_ok "Wallpaper set via swww"
+        # Use awww if caelestia-shell isn't running yet
+        if pgrep -x "awww-daemon" &>/dev/null; then
+            awww img "$FIRST_WALL" --transition-type fade --transition-duration 1
+            print_ok "Wallpaper set via awww"
         else
-            print_warn "swww-daemon not running, start Hyprland first"
+            print_warn "awww-daemon not running, start Hyprland first"
         fi
     else
         print_warn "No wallpapers found in $WALLPAPER_DIR"

@@ -2,8 +2,8 @@
 # /* ---- 💫 https://github.com/JaKooLit 💫 ---- */  ##
 # Wallust Colors for current wallpaper
 
-# Define the path to the swww cache directory
-cache_dir="$HOME/.cache/swww/"
+# Define the path to the awww cache directory
+cache_dir="$HOME/.cache/awww/"
 
 # Get a list of monitor outputs
 monitor_outputs=($(ls "$cache_dir"))
