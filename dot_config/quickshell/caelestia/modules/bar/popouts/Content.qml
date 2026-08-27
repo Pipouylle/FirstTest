@@ -122,6 +122,13 @@ Item {
         }
 
         Popout {
+            name: "easyeffects"
+            sourceComponent: EasyEffects {
+                popouts: root.popouts
+            }
+        }
+
+        Popout {
             name: "kblayout"
             sourceComponent: KbLayout {}
         }

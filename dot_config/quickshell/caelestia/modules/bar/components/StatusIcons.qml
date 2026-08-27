@@ -144,6 +144,20 @@ StyledRect {
             }
         }
 
+        // EasyEffects icon
+        WrappedLoader {
+            name: "easyeffects"
+            active: true
+
+            sourceComponent: MaterialIcon {
+                animate: true
+                text: EasyEffects.active ? "graphic_eq" : "equalizer"
+                color: EasyEffects.active ? Colours.palette.m3primary : root.colour
+                opacity: EasyEffects.running ? 1 : 0.55
+                fill: EasyEffects.active ? 1 : 0
+            }
+        }
+
         // Network icon
         WrappedLoader {
             name: "network"
