@@ -21,6 +21,28 @@
             "terminal": [
                 "kitty"
             ]
+        },
+        "idle": {
+            "lockBeforeSleep": true,
+            "inhibitWhenAudio": true,
+            "timeouts": [
+                {
+                    "timeout": 900,
+                    "idleAction": "lock"
+                },
+                {
+                    "timeout": 1200,
+                    "idleAction": "dpms off",
+                    "returnAction": "dpms on"
+                },
+                {
+                    "timeout": 2700,
+                    "idleAction": [
+                        "systemctl",
+                        "suspend-then-hibernate"
+                    ]
+                }
+            ]
         }
     },
     "launcher": {
