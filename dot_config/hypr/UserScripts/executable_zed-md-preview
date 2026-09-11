@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Ouvre un Markdown dans Zed (projet = dossier courant) avec l'aperçu côte à côte.
+# Usage : zed-md-preview <fichier.md>
+FILE="$1"
+[ -n "$FILE" ] || { echo "usage: zed-md-preview <fichier>" >&2; exit 1; }
+zeditor . "$FILE"
+exec "$(dirname "$0")/zed-preview-key" "$FILE"

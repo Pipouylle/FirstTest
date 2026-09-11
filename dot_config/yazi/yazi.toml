@@ -1,0 +1,70 @@
+# Yazi 26.x : les fichiers sélectionnés sont injectés via les
+# placeholders %s / %s1 / %d1 (déjà échappés pour le shell).
+# "$@" n'est PLUS rempli : Yazi lance `sh -c <cmd>` sans argument positionnel.
+# Sur Arch le binaire de Zed est `zeditor` (les alias zsh ne sont pas vus ici).
+
+[mgr]
+# [parent, courant, aperçu] : l'aperçu (droite) prend le maximum de place
+ratio = [ 1, 3, 6 ]
+
+[opener]
+# Markdown : mêmes trois comportements que pour les fichiers, plus l'aperçu
+# côte à côte (zed-preview-key envoie ctrl-alt-v à Zed via wtype).
+zed_md = [
+  { run = '~/.config/hypr/UserScripts/zed-md-preview %s', orphan = true, desc = "Zed" },
+]
+zed_md_focus = [
+  { run = 'ws=$(hyprctl activeworkspace | head -n1 | cut -d" " -f3); ~/.config/hypr/UserScripts/hypr-window hide "${KITTY_PID:-0}"; ~/.config/hypr/UserScripts/zed-preview-key %s & zeditor --wait . %s; ~/.config/hypr/UserScripts/hypr-window show "${ws:-1}" "${KITTY_PID:-0}"; ~/.config/hypr/UserScripts/hypr-window focus "${KITTY_PID:-0}"', block = true, desc = "Zed (Masquer terminal)" },
+]
+zed_md_swap = [
+  { run = '~/.config/hypr/UserScripts/yazi-zed-swap --preview %s', orphan = true, desc = "Zed (Ferme et rouvre le terminal)" },
+]
+# Archives zip : extraction dans un dossier du même nom (unzip)
+unzip = [
+  { run = '~/.config/hypr/UserScripts/yazi-unzip %s', block = true, desc = "Unzip (dossier du même nom)" },
+]
+# micro dans le terminal courant, par-dessus Yazi ; Ctrl+Q rend la main à Yazi
+micro = [
+  { run = 'micro %s', block = true, desc = "micro (dans le terminal)" },
+]
+edit = [
+  { run = 'zeditor . %s', orphan = true, desc = "Zed" },
+]
+zed_focus = [
+  # Cache le terminal Kitty (ciblé par son pid, pas la fenêtre active),
+  # ouvre le projet + fichier dans Zed, attend la fermeture, puis ramène
+  # le terminal sur le workspace d'origine.
+  { run = 'ws=$(hyprctl activeworkspace | head -n1 | cut -d" " -f3); ~/.config/hypr/UserScripts/hypr-window hide "${KITTY_PID:-0}"; zeditor --wait . %s; ~/.config/hypr/UserScripts/hypr-window show "${ws:-1}" "${KITTY_PID:-0}"; ~/.config/hypr/UserScripts/hypr-window focus "${KITTY_PID:-0}"', block = true, desc = "Zed (Masquer terminal)" },
+]
+zed_swap = [
+  { run = '~/.config/hypr/UserScripts/yazi-zed-swap %s', orphan = true, desc = "Zed (Ferme et rouvre le terminal)" },
+]
+# Variantes pour les DOSSIERS : le dossier survolé devient lui-même le projet Zed.
+zed_dir = [
+  { run = 'zeditor %s', orphan = true, desc = "Zed (projet)" },
+]
+zed_dir_focus = [
+  { run = 'ws=$(hyprctl activeworkspace | head -n1 | cut -d" " -f3); ~/.config/hypr/UserScripts/hypr-window hide "${KITTY_PID:-0}"; zeditor --wait %s; ~/.config/hypr/UserScripts/hypr-window show "${ws:-1}" "${KITTY_PID:-0}"; ~/.config/hypr/UserScripts/hypr-window focus "${KITTY_PID:-0}"', block = true, desc = "Zed projet (Masquer terminal)" },
+]
+
+[open]
+prepend_rules = [
+  # Markdown : aperçu live par défaut (Entrée / o), autres choix via O
+  { url = "*.{md,mdx,markdown}", use = [ "zed_md", "zed_md_focus", "zed_md_swap", "micro" ] },
+  # Archives : avant la règle générale, sinon Entrée les ouvrirait dans Zed
+  { mime = "application/zip", use = [ "unzip", "extract", "reveal" ] },
+  { mime = "application/{rar,7z*,tar,gzip,xz,zstd,bzip*,lzma,compress,archive,cpio,arj,xar,ms-cab*}", use = [ "extract", "reveal" ] },
+  # Fichiers
+  { url = "*",  use = [ "edit", "zed_focus", "zed_swap", "micro" ] },
+  # Dossiers (le "/" final cible les répertoires)
+  { url = "*/", use = [ "zed_dir", "zed_dir_focus", "zed_swap", "open", "reveal" ] },
+]
+
+[plugin]
+prepend_previewers = [
+  { url = "*.md", run = "glow" },
+  { url = "*.mdx", run = "glow" },
+  { url = "*.markdown", run = "glow" },
+  # YAML coloré via yq (plugin local yq.yazi) ; JSON est déjà géré nativement via jq
+  { url = "*.{yml,yaml}", run = "yq" },
+]

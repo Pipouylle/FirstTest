@@ -41,8 +41,47 @@ Singleton {
 
     signal configReloaded
 
+    // Hyprland en config Lua (hyprland.lua) : « dispatch » n'accepte plus l'ancienne
+    // syntaxe (« workspace 3 »), il attend du Lua (« hl.dsp.focus({ workspace = "3" }) »).
+    // On traduit les formes utilisées par le shell. Détection au démarrage et à chaque
+    // reload de config, pour rester compatible avec une config hyprlang.
+    property bool luaConfig: false
+
+    Process {
+        id: luaProbe
+        command: ["sh", "-c", "hyprctl keyword zz_probe 1 2>&1 | grep -q non-legacy && echo lua || echo conf"]
+        stdout: StdioCollector {
+            onStreamFinished: root.luaConfig = text.trim() === "lua"
+        }
+    }
+
+    onConfigReloaded: luaProbe.running = true
+
+    function toLua(r: string): string {
+        if (!luaConfig || r.startsWith("hl."))
+            return r;
+        let m;
+        if ((m = r.match(/^workspace (.+)$/)))
+            return `hl.dsp.focus({ workspace = "${m[1]}" })`;
+        if ((m = r.match(/^togglespecialworkspace(?: (.+))?$/)))
+            return m[1] ? `hl.dsp.workspace.toggle_special("${m[1]}")` : "hl.dsp.workspace.toggle_special()";
+        if ((m = r.match(/^focuswindow (.+)$/)))
+            return `hl.dsp.focus({ window = "${m[1]}" })`;
+        if ((m = r.match(/^togglefloating (.+)$/)))
+            return `hl.dsp.window.float({ window = "${m[1]}" })`;
+        if ((m = r.match(/^pin (.+)$/)))
+            return `hl.dsp.window.pin({ window = "${m[1]}" })`;
+        if ((m = r.match(/^killwindow (.+)$/)))
+            return `hl.dsp.window.close({ window = "${m[1]}" })`;
+        if ((m = r.match(/^movetoworkspace(silent)? ([^,]+),(.+)$/)))
+            return `hl.dsp.window.move({ workspace = "${m[2]}", window = "${m[3]}", follow = ${m[1] ? "false" : "true"} })`;
+        if ((m = r.match(/^dpms (on|off|toggle)$/)))
+            return `hl.dsp.dpms({ action = "${m[1]}" })`;
+        return r;
+    }
+
     function dispatch(request: string): void {
-        Hyprland.dispatch(request);
+        Hyprland.dispatch(toLua(request));
     }
 
     function cycleSpecialWorkspace(direction: string): void {
@@ -90,7 +129,10 @@ Singleton {
         extras.batchMessage(["keyword bindlni ,Caps_Lock,global,caelestia:refreshDevices", "keyword bindlni ,Num_Lock,global,caelestia:refreshDevices"]);
     }
 
-    Component.onCompleted: reloadDynamicConfs()
+    Component.onCompleted: {
+        reloadDynamicConfs();
+        luaProbe.running = true;
+    }
 
     onCapsLockChanged: {
         if (!GlobalConfig.utilities.toasts.capsLockChanged)

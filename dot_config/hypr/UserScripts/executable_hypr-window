@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Déplace / affiche / focalise une fenêtre par pid (Hyprland en config Lua).
+#   hypr-window hide <pid>            → workspace special:minimized, sans suivre
+#   hypr-window show <workspace> <pid> → ramène la fenêtre sur <workspace>
+#   hypr-window focus <pid>
+case "$1" in
+  hide)  hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = \"special:minimized\", window = \"pid:$2\", follow = false }))" ;;
+  show)  hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = \"$2\", window = \"pid:$3\", follow = true }))" ;;
+  focus) hyprctl eval "hl.dispatch(hl.dsp.focus({ window = \"pid:$2\" }))" ;;
+  *) echo "usage: hypr-window hide <pid> | show <ws> <pid> | focus <pid>" >&2; exit 1 ;;
+esac

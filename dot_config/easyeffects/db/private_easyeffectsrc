@@ -1,10 +1,10 @@
 [StreamInputs]
-inputDevice=alsa_input.usb-0b0e_Jabra_SPEAK_410_USB_305075019682x011200-00.mono-fallback
+inputDevice=alsa_input.pci-0000_04_00.6.analog-stereo
 visiblePage=pluginsPage
 
 [StreamOutputs]
 mostUsedPresets=LoudnessEqualizer,Loudness+Autogain
-outputDevice=alsa_output.usb-0b0e_Jabra_SPEAK_410_USB_305075019682x011200-00.analog-stereo
+outputDevice=alsa_output.pci-0000_04_00.6.analog-stereo
 plugins=gate#0,compressor#0,multiband_compressor#0,equalizer#0,limiter#0
 pluginsListWidth=350
 usedPresets=Loudness+Autogain:2,LoudnessEqualizer:4
@@ -13,5 +13,4 @@ visiblePlugin=gate#0
 
 [Window]
 height=1004
-visiblePage=pwPage
-width=1838
+width=915

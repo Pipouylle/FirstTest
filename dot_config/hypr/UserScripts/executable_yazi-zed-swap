@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Appelé par Yazi (opener zed_swap) : yazi-zed-swap <fichier>
+# Yazi lance ce script détaché (orphan) dans sa propre session,
+# il survit donc à la fermeture du terminal.
+
+# Option --preview : déclenche aussi l'aperçu Markdown côte à côte dans Zed
+PREVIEW=0
+if [ "$1" = "--preview" ]; then PREVIEW=1; shift; fi
+
+TARGET_FILE="$1"
+CURRENT_DIR="$(pwd)"
+# Si Yazi passe un dossier, c'est lui le projet à ouvrir
+if [ -d "$TARGET_FILE" ]; then
+  CURRENT_DIR="$TARGET_FILE"
+  TARGET_FILE=""
+fi
+# Kitty exporte KITTY_PID vers ses enfants ; $PPID serait Yazi, pas le terminal.
+TERM_PID="${KITTY_PID:-$PPID}"
+
+(
+  # Attend que Zed soit fermé (l'aperçu est déclenché en parallèle si demandé)
+  [ "$PREVIEW" = 1 ] && "$(dirname "$0")/zed-preview-key" "$TARGET_FILE" &
+  zeditor --wait "$CURRENT_DIR" ${TARGET_FILE:+"$TARGET_FILE"}
+
+  # Relance un terminal avec Yazi dans le même dossier, sur le même fichier.
+  # On passe par un zsh interactif pour que ~/.zshrc applique le thème
+  # (séquences caelestia) avant Yazi ; "exec zsh" garde le terminal ouvert après.
+  kitty --detach --directory "$CURRENT_DIR" \
+    zsh -ic 'yazi "$@"; exec zsh' yazi-zed-swap ${TARGET_FILE:+"$TARGET_FILE"}
+) &
+disown
+
+# Ferme la fenêtre Kitty courante
+kill "$TERM_PID"

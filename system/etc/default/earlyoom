@@ -1,0 +1,1 @@
+EARLYOOM_ARGS="-m 5 -s 50 -r 3600 --avoid '(^|/)(Hyprland|qs|pipewire|wireplumber|sddm|systemd)$' --prefer '(^|/)(Isolated Web Co|Web Content)$'"

@@ -4,3 +4,6 @@
 # Documentation du depot. Sans cette ligne chezmoi la traite comme un dotfile et
 # la recopie dans ~/README.md, ou elle se perime des que le depot avance.
 README.md
+
+# Copies des fichiers /etc et script d installation : pas des dotfiles, voir README.
+system

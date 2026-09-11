@@ -1,0 +1,11 @@
+// Raccourcis personnalisés Zed
+// ctrl-alt-v : aperçu Markdown côte à côte (le ctrl-k v par défaut est masqué
+// par le keymap JetBrains où ctrl-k ouvre le panneau git).
+[
+  {
+    "context": "Editor && (extension == md || extension == mdx || extension == markdown)",
+    "bindings": {
+      "ctrl-alt-v": "markdown::OpenPreviewToTheSide"
+    }
+  }
+]

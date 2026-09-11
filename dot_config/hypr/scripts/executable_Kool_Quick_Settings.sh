@@ -2,12 +2,12 @@
 # /* ---- 💫 https://github.com/JaKooLit 💫 ---- */  ##
 # Rofi menu for KooL Hyprland Quick Settings (SUPER SHIFT E)
 
-# Modify this config file for default terminal and EDITOR
-config_file="$HOME/.config/hypr/UserConfigs/01-UserDefaults.conf"
-
-tmp_config_file=$(mktemp)
-sed 's/^\$//g; s/ = /=/g' "$config_file" > "$tmp_config_file"
-source "$tmp_config_file"
+# Apps par défaut (mêmes valeurs que lua/binds.lua)
+term=kitty
+files=nautilus
+editor=zeditor
+edit="${EDITOR:-nano}"
+Search_Engine="https://www.google.com/search?q={}"
 # ##################################### #
 
 # variables
@@ -53,16 +53,16 @@ main() {
     
     # Map choices to corresponding files
     case "$choice" in
-    	"view/edit User Defaults") file="$UserConfigs/01-UserDefaults.conf" ;;
-        "view/edit ENV variables") file="$UserConfigs/ENVariables.conf" ;;
-        "view/edit Window Rules") file="$UserConfigs/WindowRules.conf" ;;
-        "view/edit User Keybinds") file="$UserConfigs/UserKeybinds.conf" ;;
-        "view/edit User Settings") file="$UserConfigs/UserSettings.conf" ;;
-        "view/edit Startup Apps") file="$UserConfigs/Startup_Apps.conf" ;;
-        "view/edit Decorations") file="$UserConfigs/UserDecorations.conf" ;;
-        "view/edit Animations") file="$UserConfigs/UserAnimations.conf" ;;
-        "view/edit Laptop Keybinds") file="$UserConfigs/Laptops.conf" ;;
-        "view/edit Default Keybinds") file="$configs/Keybinds.conf" ;;
+    	"view/edit User Defaults") file="$HOME/.config/hypr/lua/binds.lua" ;;
+        "view/edit ENV variables") file="$HOME/.config/hypr/lua/env.lua" ;;
+        "view/edit Window Rules") file="$HOME/.config/hypr/lua/rules.lua" ;;
+        "view/edit User Keybinds") file="$HOME/.config/hypr/lua/binds.lua" ;;
+        "view/edit User Settings") file="$HOME/.config/hypr/lua/settings.lua" ;;
+        "view/edit Startup Apps") file="$HOME/.config/hypr/lua/autostart.lua" ;;
+        "view/edit Decorations") file="$HOME/.config/hypr/lua/decorations.lua" ;;
+        "view/edit Animations") file="$HOME/.config/hypr/lua/animations.lua" ;;
+        "view/edit Laptop Keybinds") file="$HOME/.config/hypr/lua/laptop.lua" ;;
+        "view/edit Default Keybinds") file="$HOME/.config/hypr/lua/binds.lua" ;;
         "Choose Kitty Terminal Theme") $scriptsDir/Kitty_themes.sh ;;
         "Configure Monitors (nwg-displays)") 
             if ! command -v nwg-displays &>/dev/null; then

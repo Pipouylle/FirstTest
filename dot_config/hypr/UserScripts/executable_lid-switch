@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Gestion du capot (Lid Switch), appelé par Laptops.conf.
+#   lid-switch on   : capot fermé
+#   lid-switch off  : capot ouvert
+#
+# Ne désactive l'écran interne QUE si un autre écran est actif. Avec l'écran
+# interne seul, le désactiver laisse Hyprland sans moniteur pendant que
+# caelestia verrouille (capture d'écran de eDP-1) avant la veille : au réveil,
+# Hyprland déréférence un moniteur disparu et plante
+# (CScreenshareFrame::transform / CScreenshareSession::init, Hyprland 0.56.2).
+INTERNAL="eDP-1"
+case "$1" in
+  on)
+    # Session déjà verrouillée : l'écran de verrouillage capture eDP-1, le
+    # désactiver maintenant reproduirait le même plantage. On ne touche à rien.
+    locked=$(timeout 3 qs -c caelestia ipc call lock isLocked 2>/dev/null || echo false)
+    [ "$locked" = "true" ] && exit 0
+    others=$(hyprctl monitors | grep '^Monitor ' | grep -vc "^Monitor $INTERNAL " || true)
+    if [ "${others:-0}" -gt 0 ]; then
+      hyprctl eval "hl.monitor({ output = \"$INTERNAL\", disabled = true })"
+    fi
+    ;;
+  off)
+    hyprctl eval "hl.monitor({ output = \"$INTERNAL\", mode = \"preferred\", position = \"auto\", scale = 1 })"
+    ;;
+  *) echo "usage: lid-switch on|off" >&2; exit 1 ;;
+esac

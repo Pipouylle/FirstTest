@@ -1,266 +1,194 @@
-# Setup des Dotfiles (Arch Linux + Hyprland + Caelestia)
+# Dotfiles — Arch Linux + Hyprland (Lua) + caelestia-shell
 
-Ce dépôt contient les fichiers de configuration de votre environnement de travail (dotfiles), gérés avec [chezmoi](https://www.chezmoi.io/).
+Gérés avec [chezmoi](https://www.chezmoi.io/). Dernière remise à plat : 2026-09-11
+(migration Hyprland en Lua, Yazi/Zed/Kitty ajoutés, réglages de performance).
+Machine de référence : Lenovo IdeaPad Slim 3 15AMN8, Ryzen 3 7320U, 8 Go, Radeon 610M.
+
+Contenu géré :
+
+| Cible | Rôle |
+|---|---|
+| `~/.config/hypr/` | Hyprland en **Lua** (`hyprland.lua` + `lua/`), scripts, hyprlock, hypridle, profils d'écran, `legacy/` (ancienne config hyprlang, non chargée) |
+| `~/.config/quickshell/caelestia/` | caelestia-shell (barre, notifications, verrouillage, OSD), avec le patch `services/Hypr.qml` pour l'API Lua |
+| `~/.config/caelestia/` | réglages caelestia (`shell.json`) |
+| `~/.config/yazi/` | gestionnaire de fichiers : ouvreurs Zed/micro, zip/unzip, aperçus glow/jq/yq (plugins inclus, déjà patchés pour Yazi 26.x) |
+| `~/.config/zed/` | keymap (aperçu Markdown `ctrl-alt-v`), settings, thème caelestia |
+| `~/.config/kitty/` | terminal + thèmes |
+| `~/.config/easyeffects/`, `waypaper/`, `fastfetch/`, `vicinae/` | audio, fonds d'écran, fetch, lanceur |
+| `~/.zshrc`, `~/.zprofile`, `~/.condarc` | shell (oh-my-zsh), conda **sans** activation auto de `base` |
+| `~/.local/bin/linux-wallpaperengine` | lanceur Wallpaper Engine |
+| `system/` (non déployé par chezmoi) | copies des fichiers `/etc` + `install.sh` |
 
 ---
 
-## 1. Restauration des configurations (sur une Arch vierge)
+## 1. Restauration sur une Arch vierge
 
-Une fois que votre nouveau système Arch Linux est installé et que vous avez accès à internet :
+Ordre à respecter : paquets → oh-my-zsh → chezmoi → script système → redémarrage.
 
-```bash
-# 1. Initialiser chezmoi avec votre dépôt
-chezmoi init https://github.com/Pipouylle/FirstTest.git
-
-# 2. Appliquer les configurations sur votre machine
-chezmoi apply
-```
-
-Toutes vos configurations (`hypr`, `quickshell/caelestia`, `easyeffects`) seront automatiquement placées dans leurs dossiers respectifs (`~/.config/`).
-
----
-
-## 2. Paquets requis à installer
-
-Pour que l'ensemble de l'environnement fonctionne correctement (raccourcis, barre d'état, effets audio, fonds d'écran animés, utilitaires), vous devez installer les paquets suivants.
-
-### A. Paquets système (depuis les dépôts officiels Arch)
-Installez-les via `pacman` :
+### A. Paquets des dépôts officiels
 
 ```bash
 sudo pacman -S --needed \
-    hyprland \
-    hypridle \
-    hyprlock \
-    hyprpolkitagent \
-    sddm \
-    easyeffects \
-    rofi \
-    kitty \
-    zsh \
-    lsd \
-    fastfetch \
-    fzf \
-    wl-clipboard \
-    cliphist \
-    jq \
-    bc \
-    ffmpeg \
-    imagemagick \
-    git \
-    xdg-desktop-portal-hyprland \
-    tree
+  hyprland hypridle hyprlock hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
+  qt6-wayland sddm pipewire wireplumber \
+  networkmanager network-manager-applet dnsmasq wpa_supplicant bluez bluez-utils blueman \
+  kitty zsh lsd fastfetch fzf tree bc jq go-yq \
+  yazi glow micro 7zip zip unzip \
+  zed wtype \
+  awww waypaper wallust nwg-displays \
+  wl-clipboard cliphist grim slurp swappy \
+  brightnessctl playerctl pamixer easyeffects cava btop \
+  ffmpeg imagemagick git base-devel cmake meson ninja \
+  ttf-jetbrains-mono-nerd noto-fonts-emoji \
+  nautilus firefox \
+  zram-generator earlyoom iw power-profiles-daemon python-gobject \
+  chezmoi
 ```
 
-*Description rapide :*
-* `hyprland`, `hypridle`, `hyprlock` : Le compositeur de fenêtres, le gestionnaire d'inactivité et l'écran de verrouillage.
-* `hyprpolkitagent` : L'agent Polkit pour gérer l'authentification et les droits système en mode graphique.
-* `sddm` : Le gestionnaire de connexion graphique (Display Manager) pour démarrer la session.
-* `easyeffects` : Égaliseur et traitement du son (avec tes préréglages).
-* `rofi` : Le menu de sélection de fonds d'écran et lanceur d'applications.
-* `kitty` : Le terminal par défaut.
-* `zsh` : Le shell alternatif interactif utilisé par défaut.
-* `lsd` : Une alternative moderne à `ls` avec des couleurs et des icônes (utilisée dans les alias de `.zshrc`).
-* `fastfetch` : Affiche les informations système au démarrage du terminal.
-* `fzf` : Le moteur de recherche floue (Fuzzy Finder) utilisé pour la recherche d'historique dans le terminal.
-* `wl-clipboard`, `cliphist` : Gestionnaire de presse-papiers sous Wayland.
-* `jq`, `bc` : Utilitaires système requis par les scripts de fond d'écran et de météo.
-* `ffmpeg`, `imagemagick` : Requis par le script de fond d'écran pour générer les aperçus vidéo et GIF dans Rofi.
+Pourquoi ces paquets :
+
+* `hyprland` 0.56+ (config Lua), `hypridle`/`hyprlock` (installés mais **non lancés** : caelestia gère l'inactivité et le verrouillage), `hyprpolkitagent` (agent polkit, lancé par `scripts/Polkit.sh`).
+* `sddm` : écran de connexion, thème `simple_sddm_2` (voir §3).
+* `networkmanager` + `wpa_supplicant` + `dnsmasq` : Wi‑Fi et DNS local. **Ne pas installer/activer `iwd`** (doublon, il crée et supprime lui‑même `wlan0`).
+* `awww` : remplaçant de `swww` (renommé upstream) ; `waypaper` : sélection des fonds ; `wallust` : couleurs depuis le fond d'écran, lues par `lua/colors.lua` et hyprlock ; `nwg-displays` : écrit `monitors.conf`/`workspaces.conf`, que `lua/monitors.lua` relit.
+* `yazi` + `glow` (aperçu Markdown), `jq`/`go-yq` (aperçus JSON/YAML), `7zip`/`zip`/`unzip` (raccourcis `C`/`U`), `micro` (édition dans le terminal).
+* `zed` : le binaire est `zeditor` (alias `zed` dans `.zshrc`) ; `wtype` envoie `ctrl-alt-v` pour ouvrir l'aperçu Markdown côte à côte.
+* `wl-clipboard`/`cliphist` : presse‑papiers ; `grim`/`slurp`/`swappy` : captures ; `brightnessctl`/`playerctl`/`pamixer` : touches média.
+* `zram-generator`, `earlyoom`, `iw`, `power-profiles-daemon`, `python-gobject` : voir §4 « Réglages système ».
+* `ffmpeg`/`imagemagick`/`bc`/`jq` : scripts JaKooLit (aperçus vidéo, météo).
+
+### B. Paquets AUR (`yay -S --needed …`)
+
+```bash
+yay -S --needed quickshell-git caelestia-cli linux-wallpaperengine-git mpvpaper simple-sddm-theme-2-git
+```
+
+* `quickshell-git` : moteur de caelestia-shell. À recompiler (`yay -S quickshell-git`) après une mise à jour de Qt.
+* `caelestia-cli` : commande `caelestia` (schémas, fonds). **Ne pas installer `caelestia-shell`** : le shell tourne depuis la copie gérée `~/.config/quickshell/caelestia/`, qui contient le patch `Hypr.qml` (traduction des dispatchers legacy vers l'API Lua).
+* `linux-wallpaperengine-git` : fonds Steam Workshop (lanceur dans `~/.local/bin`).
+* `mpvpaper` : fonds vidéo (`live_wallpaper` dans `lua/autostart.lua`). Pas installé sur la machine de référence au 2026‑09‑11 : à installer si les fonds vidéo sont utilisés.
+* `simple-sddm-theme-2-git` : thème SDDM (le dossier `/usr/share/sddm/themes/simple_sddm_2` existe sur la machine de référence sans paquet pacman ; réinstaller via l'AUR ou recopier le dossier).
+
+### C. Installés à la main (hors pacman)
+
+* **vicinae** (lanceur, `vicinae server` au démarrage) : AppImage des releases GitHub (<https://github.com/vicinaehq/vicinae>) décompressée dans `/usr/local/lib/vicinae`, lien `/usr/local/bin/vicinae` vers `usr/bin/vicinae`, fichiers `.desktop` dans `/usr/local/share/applications`. Refaire pareil ou utiliser le paquet AUR `vicinae-bin` s'il existe.
+* **Anaconda** dans `~/anaconda3` (facultatif). `~/.condarc` désactive l'activation automatique : sinon `~/anaconda3/bin` passe devant `/usr/bin` et casse `jq`, `python3`, `powerprofilesctl`.
+* **oh-my-zsh** + plugins, avant `chezmoi apply` :
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
+git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
+git clone https://github.com/enrico9034/watch-plugin-zsh.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/watch
+```
+
+### D. Déployer les dotfiles puis le système
+
+```bash
+chezmoi init --apply git@github.com:Pipouylle/FirstTest.git   # ou l'URL https
+sudo bash ~/.local/share/chezmoi/system/install.sh            # /etc, swap, services (§4)
+sudo reboot
+```
+
+Après redémarrage, en utilisateur :
+
+```bash
+tailscale set --accept-dns=false     # si Tailscale est utilisé, voir §4
+powerprofilesctl get                 # doit répondre sans traceback
+zramctl ; swapon --show              # zram0 3,5 Go prio 100 + /swapfile 4 Go
+```
 
 ---
 
-### B. Outils de compilation (Requis pour compiler les paquets AUR)
-Avant d'installer les paquets de l'AUR, installez les outils de compilation essentiels :
+## 2. Hyprland en Lua
+
+Point d'entrée `~/.config/hypr/hyprland.lua`, modules dans `lua/` (monitors, env, settings,
+decorations, animations, rules, binds, laptop, binds-caelestia, autostart). Détails, différences et
+retour arrière dans `~/.config/hypr/README.md`. À retenir :
+
+* Sous le gestionnaire Lua, `hyprctl keyword`, `hyprctl setprop` et l'ancienne syntaxe
+  `hyprctl dispatch <nom>` sont refusés. Tout passe par `hyprctl eval 'hl....'`
+  (ex. `hyprctl dispatch 'hl.dsp.focus({ workspace = "3" })'`). Tous les scripts de `scripts/` et
+  `UserScripts/` sont déjà adaptés ; `UserScripts/hypr-window hide|show|focus` gère une fenêtre par pid.
+* **Ne jamais lancer `hyprctl reload full-reset`** (retour à chaud vers hyprlang) : plante Hyprland 0.56.2.
+* Le démarrage automatique est dans `lua/autostart.lua` (awww ou mpvpaper, caelestia `qs -c caelestia -d`,
+  vicinae, cliphist, easyeffects, portails). Un marqueur dans `$XDG_RUNTIME_DIR` évite de relancer à chaque reload.
+* Les couleurs wallust sont lues au chargement : les scripts font `hyprctl reload` après `wallust run`.
+* Capot : `UserScripts/lid-switch` ne coupe l'écran interne que si un autre écran est actif et que la
+  session n'est pas verrouillée (sinon crash screencopy caelestia).
+* Écrans : TV `desc:LG Electronics LG TV 0x01010101` à gauche (0x0), `eDP-1` à 1920x0, dans `monitors.conf`.
+* Raccourcis retirés faute d'équivalent Lua : SUPER+M (`splitratio`), SUPER+ALT+SPACE (`workspaceopt`).
+
+## 3. SDDM
+
+`/etc/sddm.conf` (dans `system/`) sélectionne le thème `simple_sddm_2`. Pour synchroniser le fond de
+l'écran de connexion avec le fond d'écran courant (fait par `UserScripts/WallpaperSelect.sh`) :
 
 ```bash
-sudo pacman -S --needed base-devel cmake meson ninja git
+sudo touch /var/lib/sddm_wallpaper.jpg && sudo chown $USER:$USER /var/lib/sddm_wallpaper.jpg
+sudo ln -sf /var/lib/sddm_wallpaper.jpg /usr/share/sddm/themes/simple_sddm_2/Backgrounds/default
 ```
 
----
+Connexion automatique (facultatif) : `/etc/sddm.conf.d/autologin.conf` avec `[Autologin] User=timothe Session=hyprland`.
+Sans SDDM : décommenter le bloc `exec Hyprland` dans `~/.zprofile`.
 
-### C. Paquets AUR (via un helper comme `yay` ou `paru`)
-Installez-les depuis l'AUR :
+## 4. Réglages système (`system/install.sh`)
+
+Copies dans `system/etc/`, appliquées par le script. Justification (mesures du 2026‑09‑11, 8 Go de RAM,
+SSD sans DRAM, dizaines d'OOM kills dans le journal avant) :
+
+| Fichier / action | Effet |
+|---|---|
+| `systemd/zram-generator.conf` | zram0 = RAM/2 en zstd, priorité 100 |
+| `tmpfiles.d/disable-zswap.conf` | coupe zswap (ne pas cumuler avec zram) |
+| `sysctl.d/99-zram.conf` | swappiness 180, page-cluster 0 (valeurs wiki Arch pour zram) |
+| `/swapfile` 4 Go, priorité -1 | filet derrière la zram (32 Go avant) ; hibernation non gérée |
+| `default/earlyoom` | tue processus par processus (Firefox d'abord) sous 5 % RAM et 50 % swap libres ; protège Hyprland, qs, pipewire, sddm |
+| `NetworkManager/NetworkManager.conf` | `dns=dnsmasq` |
+| services | active NetworkManager, earlyoom, sddm, bluetooth, `docker.socket` (à la demande) ; désactive iwd, netbird, rustdesk, `docker.service` |
+| `tailscale set --accept-dns=false` | DNS système indépendant de tailscaled (les noms MagicDNS ne se résolvent plus, les IP 100.x oui) |
+
+Autres choix de performance déjà dans les dotfiles : flou Hyprland `size = 4, passes = 1`
+(`lua/decorations.lua`) ; `ALT+O` (`scripts/ChangeBlur.sh`) bascule encore entre 5/2 et 2/1.
+`power-profiles-daemon` est en `performance` sur secteur et `low-power` sur batterie ; forcer avec
+`powerprofilesctl set performance`.
+
+## 5. caelestia-shell
+
+Lancé par `lua/autostart.lua` (`qs -c caelestia -d`). Recharger à la main :
 
 ```bash
-yay -S --needed \
-    quickshell-git \
-    swww \
-    linux-wallpaperengine-git \
-    waypaper \
-    wallust \
-    vicinae \
-    caelestia-cli \
-    caelestia-shell \
-    simple-sddm-theme-2-git
-```
-
-*Description rapide :*
-* `quickshell-git` : Requis pour faire tourner l'interface et la barre supérieure **Caelestia-Shell**.
-* `swww` : Moteur de gestion des fonds d'écran (images et transitions fluides).
-* `linux-wallpaperengine-git` : Moteur pour lire les fonds d'écran du Steam Workshop (Wallpaper Engine).
-* `waypaper` : L'interface graphique pour choisir et appliquer facilement vos fonds d'écran.
-* `wallust` : Générateur automatique de schémas de couleurs basé sur votre fond d'écran.
-* `vicinae` : Le lanceur d'applications rapide (style Raycast) lancé en arrière-plan.
-* `caelestia-cli` : L'outil en ligne de commande principal (CLI) pour gérer les dotfiles de Caelestia.
-* `caelestia-shell` : Le paquet de l'interface qui compile les composants QML et les plugins système pour le shell.
-* `simple-sddm-theme-2-git` : Le thème minimaliste et personnalisable pour l'écran de connexion SDDM.
-
----
-
-## 3. Post-installation & Premier démarrage
-
-1. Assurez-vous que le service de presse-papiers démarre bien (il est configuré dans `Startup_Apps.conf`).
-2. Pour lancer les fonds d'écran interactifs :
-   * Ouvrez Steam et téléchargez vos fonds d'écran dans Wallpaper Engine.
-   * Lancez `waypaper`, choisissez `linux-wallpaperengine` comme backend, et sélectionnez votre fond d'écran.
-3. Pour EasyEffects, ouvrez l'application une première fois afin qu'elle charge tes configurations de filtres et d'égaliseur depuis `~/.config/easyeffects/db/`.
-4. **Configuration de Zsh & Oh My Zsh** :
-   * Installez Oh My Zsh :
-     ```bash
-     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-     ```
-   * Installez les deux plugins de complétion et coloration syntaxique :
-     ```bash
-     # zsh-syntax-highlighting
-     git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
-     
-     # zsh-autosuggestions
-     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-
-     # watch
-     git clone https://github.com/enrico9034/watch-plugin-zsh.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/watch
-     ```
-   * Ré-appliquez chezmoi pour restaurer le fichier `.zshrc` configuré :
-     ```bash
-     chezmoi apply
-     ```
-
----
-
-## 4. Configuration de Quickshell et Caelestia-Shell
-
-Caelestia-Shell est une configuration unifiée écrite en QML pour le gestionnaire d'interface **Quickshell**. Il n'y a pas besoin de compiler l'interface manuellement car c'est un langage interprété (QML/Qt6).
-
-### A. Structure des dossiers
-Quickshell cherche ses configurations sous `~/.config/quickshell/<nom-de-la-config>/shell.qml`.
-Chezmoi va automatiquement restaurer le dossier Caelestia à cet emplacement :
-`~/.config/quickshell/caelestia/`
-
-### B. Tester et lancer Caelestia-Shell
-Pour lancer Caelestia en arrière-plan (mode daemon) :
-```bash
-# Lancer Caelestia-Shell
-qs -c caelestia -d
-```
-
-Si vous modifiez les fichiers QML et voulez recharger l'interface à la volée :
-```bash
-# Tuer l'instance active et redémarrer
 qs kill -c caelestia && qs -c caelestia -d
 ```
 
-### C. Lancement automatique au démarrage d'Hyprland
-Le lancement automatique est configuré dans votre fichier `~/.config/hypr/UserConfigs/Startup_Apps.conf` via la ligne :
-```ini
-exec-once = qs -c caelestia -d
-```
-Cela remplace automatiquement Waybar et SwayNC d'origine au chargement d'Hyprland.
+`services/Hypr.qml` sonde le gestionnaire de config (`hyprctl keyword zz_probe 1`) et traduit
+`workspace N`, `togglespecialworkspace`, `focuswindow`, `movetoworkspace`, `dpms …` en API Lua.
+Sauvegarde du fichier d'origine : `Hypr.qml.bak-2026-09-11`. Ne pas écraser ce fichier avec
+`caelestia-shell` du paquet AUR.
 
----
+## 6. Yazi, Zed, Kitty
 
-## 5. Démarrage automatique sur Hyprland (Boot automatique)
+* Yazi : `Entrée`/`O` sur un fichier → Zed dans la fenêtre courante, ou en cachant/remplaçant le terminal
+  (`UserScripts/yazi-zed-swap`) ; `.md` → Zed avec aperçu côte à côte (`UserScripts/zed-md-preview`) ;
+  `micro` dans le même terminal ; `C` = zip, `U` = unzip ; dossiers → Zed. Kitty exporte `KITTY_PID`,
+  utilisé pour retrouver la fenêtre.
+* Zed : `~/.config/zed/keymap.json` lie `ctrl-alt-v` à `markdown::OpenPreviewToTheSide`
+  (le keymap JetBrains masque `ctrl-k`). Le thème caelestia est dans `themes/`.
+* Kitty : le thème vient de `~/.zshrc` (`cat ~/.local/state/caelestia/sequences.txt`), donc les terminaux
+  relancés par script le sont en `zsh -ic`.
 
-Pour que l'ordinateur démarre automatiquement sur Hyprland à l'allumage, vous avez deux approches :
+## 7. Partage d'écran (PipeWire + xdg-desktop-portal-hyprland)
 
-### Méthode 1 : Avec écran de connexion SDDM (Recommandé)
-1. **Activer le service SDDM** pour qu'il se lance au démarrage :
-   ```bash
-   sudo systemctl enable sddm
-   ```
-2. **Configurer le thème SDDM et la synchronisation du fond d'écran** :
-   * Installez le thème `simple-sddm-theme-2-git` depuis l'AUR.
-   * Créez ou modifiez `/etc/sddm.conf.d/theme.conf` avec root :
-     ```ini
-     [Theme]
-     Current=simple-sddm-2
-     ```
-   * Pour que le fond d'écran de l'écran de connexion se synchronise automatiquement et sans mot de passe avec votre fond d'écran actif :
-     ```bash
-     # 1. Créer le fichier de destination et donner les droits à votre utilisateur
-     sudo touch /var/lib/sddm_wallpaper.jpg
-     sudo chown timothe:timothe /var/lib/sddm_wallpaper.jpg
+Les portails sont lancés par `scripts/PortalHyprland.sh` depuis `lua/autostart.lua`. Dans Chromium/Brave :
+`chrome://flags` → *Preferred Ozone platform* → **Wayland**.
 
-     # 2. Créer le lien symbolique du thème vers ce fichier
-     sudo rm -f /usr/share/sddm/themes/simple-sddm-2/Backgrounds/default
-     sudo ln -sf /var/lib/sddm_wallpaper.jpg /usr/share/sddm/themes/simple-sddm-2/Backgrounds/default
-     ```
-     Le script `set_wallpaper.py` copiera automatiquement le fond d'écran actuel (ou son aperçu haute résolution si c'est un fond animé) dans `/var/lib/sddm_wallpaper.jpg`.
-3. **(Optionnel) Activer la connexion automatique** (sans avoir à taper votre mot de passe) :
-   Créez ou modifiez le fichier `/etc/sddm.conf.d/autologin.conf` :
-   ```ini
-   [Autologin]
-   User=timothe
-   Session=hyprland
-   ```
+## 8. Synchroniser
 
-### Méthode 2 : Sans gestionnaire graphique (Lancement direct depuis le TTY)
-Si vous ne souhaitez pas installer de gestionnaire de connexion (pas de SDDM), vous pouvez utiliser le fichier de profil utilisateur **`.zprofile`** (géré par chezmoi) :
-1. Ouvrez `~/.zprofile` (qui a été restauré par chezmoi).
-2. Décommentez les lignes suivantes au début du fichier :
-   ```bash
-   if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
-          exec Hyprland
-   fi
-   ```
-   *Note : la commande `exec` est importante car elle remplace le processus du shell de connexion par Hyprland, ce qui sécurise le TTY sous-jacent.*
-
----
-
-## 6. Synchronisation et Mises à jour (Récupérer les changements distants)
-
-Si vous apportez des modifications à vos configurations depuis un autre PC et les poussez sur GitHub, vous pouvez les récupérer et les appliquer sur votre machine locale de deux façons :
-
-### Option A : Tout faire en une seule commande (Recommandé)
 ```bash
-chezmoi update
-```
-*Cette commande télécharge les modifications depuis GitHub (via un `git pull` interne) et les applique directement sur vos fichiers locaux.*
-
-### Option B : Étape par étape (Sécurisé, pour valider les changements)
-1. **Télécharger les nouveautés** depuis GitHub sans les appliquer immédiatement :
-   ```bash
-   chezmoi git pull
-   ```
-2. **Vérifier les différences** (voir ce qui va changer sur votre machine) :
-   ```bash
-   chezmoi diff
-   ```
-3. **Appliquer les nouveautés** sur votre système réel :
-   ```bash
-   chezmoi apply
-   ```
-
----
-
-## 7. Partage d'écran sous Wayland (WebRTC / Discord / Meet)
-
-Pour partager votre écran entier ou d'autres applications sous Wayland/Hyprland (et pas seulement un onglet du navigateur), le système utilise **PipeWire** et **xdg-desktop-portal-hyprland**.
-
-### A. Démarrage des portails
-Assurez-vous que le script de portails est activé au démarrage dans votre fichier `~/.config/hypr/UserConfigs/Startup_Apps.conf` :
-```ini
-exec-once = $scriptsDir/PortalHyprland.sh
+chezmoi update                 # pull + apply
+chezmoi git pull && chezmoi diff && chezmoi apply   # pas à pas
+chezmoi re-add && chezmoi git -- add -A && chezmoi git -- commit -m "…" && chezmoi git -- push
 ```
 
-Pour les démarrer manuellement sans redémarrer votre session :
-```bash
-~/.config/hypr/scripts/PortalHyprland.sh
-```
-
-### B. Configuration du navigateur (Chromium, Brave, Chrome)
-Pour que le navigateur puisse interagir avec le portail de capture de Wayland :
-1. Ouvrez `chrome://flags` dans votre navigateur.
-2. Recherchez **Preferred Ozone platform**.
-3. Remplacez **Default** par **Auto** (ou **Wayland**).
-4. Relancez le navigateur.
-
+Le dossier `system/` n'est pas déployé par chezmoi (`.chezmoiignore`) : après avoir modifié un fichier
+dans `/etc`, le recopier à la main dans `system/etc/`.

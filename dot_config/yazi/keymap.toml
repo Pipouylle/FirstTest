@@ -1,0 +1,8 @@
+[mgr]
+prepend_keymap = [
+  # C : zippe la sélection (ou le fichier survolé). Le nom "archive" est
+  # pré-rempli et modifiable, %s est remplacé par les fichiers à la validation.
+  { on = "C", run = 'shell --interactive --block --cursor=43 "~/.config/hypr/UserScripts/yazi-zip archive %s"', desc = "Zip la sélection (nom modifiable)" },
+  # U : dézippe chaque archive sélectionnée dans un dossier du même nom
+  { on = "U", run = 'shell --block "~/.config/hypr/UserScripts/yazi-unzip %s"', desc = "Unzip dans un dossier du même nom" },
+]

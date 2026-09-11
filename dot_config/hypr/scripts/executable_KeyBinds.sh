@@ -11,29 +11,15 @@ if pidof rofi > /dev/null; then
 fi
 
 # define the config files
-keybinds_conf="$HOME/.config/hypr/configs/Keybinds.conf"
-user_keybinds_conf="$HOME/.config/hypr/UserConfigs/UserKeybinds.conf"
-laptop_conf="$HOME/.config/hypr/UserConfigs/Laptops.conf"
+lua_dir="$HOME/.config/hypr/lua"
 rofi_theme="$HOME/.config/rofi/config-keybinds.rasi"
-msg='☣️ NOTE ☣️: Clicking with Mouse or Pressing ENTER will have NO function'
+msg='Keybinds (config Lua : lua/binds*.lua, lua/laptop.lua)'
 
-# combine the contents of the keybinds files and filter for keybinds
-keybinds=$(cat "$keybinds_conf" "$user_keybinds_conf" | grep -E '^bind')
+# Extrait les hl.bind("touches", ...) des modules Lua
+keybinds=$(grep -hE '^\s*hl\.bind\(' "$lua_dir/binds.lua" "$lua_dir/binds-caelestia.lua" "$lua_dir/laptop.lua" \
+  | sed -E 's/^\s*hl\.bind\("([^"]+)",\s*(.*)\)\s*(--.*)?$/\1  →  \2  \3/')
 
-# check if laptop.conf exists and add its keybinds if present
-if [[ -f "$laptop_conf" ]]; then
-    laptop_binds=$(grep -E '^bind' "$laptop_conf")
-    keybinds+=$'\n'"$laptop_binds"
-fi
-
-# check for any keybinds to display
-if [[ -z "$keybinds" ]]; then
-    echo "no keybinds found."
-    exit 1
-fi
-
-# replace $mainmod with super in the displayed keybinds for rofi
-display_keybinds=$(echo "$keybinds" | sed 's/\$mainMod/SUPER/g')
+display_keybinds="$keybinds"
 
 # use rofi to display the keybinds with the modified content
 echo "$display_keybinds" | rofi -dmenu -i -config "$rofi_theme" -mesg "$msg"

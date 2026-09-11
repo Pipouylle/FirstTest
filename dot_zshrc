@@ -7,6 +7,7 @@ ZSH_THEME="awesomepanda"
 
 plugins=(
     git
+    aliases
     archlinux
     zsh-autosuggestions
     zsh-syntax-highlighting
@@ -16,7 +17,6 @@ plugins=(
     z
     kubectl
     kubectx
-    kubens
 )
 
 source $ZSH/oh-my-zsh.sh
@@ -47,7 +47,10 @@ alias la='ls -a'
 alias lla='ls -la'
 alias lt='ls --tree'
 alias clb="claude —permission-mode bypassPermissions"
-
+alias archwin='ssh -t timot@desktop-d08n7j2 wsl.exe -d archlinux --cd ~'
+alias ssh="kitten ssh"
+alias yac="cd ~/Document/Cour yazi"
+alias zed='zeditor'
 # Set-up FZF key bindings (CTRL R for fuzzy history finder)
 source <(fzf --zsh)
 
@@ -56,9 +59,9 @@ HISTSIZE=10000
 SAVEHIST=10000
 setopt appendhistory
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+#export NVM_DIR="$HOME/.nvm"
+#[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+#[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
 #THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
 export SDKMAN_DIR="$HOME/.sdkman"
@@ -72,3 +75,22 @@ alias gem='STTY_SIZE=80x24 TERM=vt100 gemini gemini'
 export PATH="/home/timothe/.local/bin:$PATH"
 export PATH="/home/timothe/.local/bin:$PATH"
 alias clb='claude --permission-mode bypassPermissions'
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/timothe/anaconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/timothe/anaconda3/etc/profile.d/conda.sh" ]; then
+        . "/home/timothe/anaconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/timothe/anaconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+
+# Sécurité : purge les vars héritées de la session (supprimables après reconnexion)
+unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN

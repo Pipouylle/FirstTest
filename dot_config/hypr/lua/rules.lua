@@ -1,0 +1,158 @@
+-- Règles fenêtres et layers (ex UserConfigs/WindowRules.conf).
+local W, L = hl.window_rule, hl.layer_rule
+local function tag(name, key, pat) W({ match = { [key] = pat }, tag = "+" .. name }) end
+
+-- Tags
+tag("browser", "class", "^([Ff]irefox|org.mozilla.firefox|[Ff]irefox-esr|[Ff]irefox-bin)$")
+tag("browser", "class", "^([Gg]oogle-chrome(-beta|-dev|-unstable)?)$")
+tag("browser", "class", "^(chrome-.+-Default)$")
+tag("browser", "class", "^([Cc]hromium)$")
+tag("browser", "class", "^([Mm]icrosoft-edge(-stable|-beta|-dev|-unstable))$")
+tag("browser", "class", "^(Brave-browser(-beta|-dev|-unstable)?)$")
+tag("browser", "class", "^([Tt]horium-browser|[Cc]achy-browser)$")
+tag("browser", "class", "^(zen-alpha|zen)$")
+tag("notif", "class", "^(swaync-control-center|swaync-notification-window|swaync-client|class)$")
+tag("KooL_Cheat", "title", "^(KooL Quick Cheat Sheet)$")
+tag("KooL_Settings", "title", "^(KooL Hyprland Settings)$")
+tag("KooL-Settings", "class", "^(nwg-displays|nwg-look)$")
+tag("terminal", "class", "^(Alacritty|kitty|kitty-dropterm)$")
+tag("email", "class", "^([Tt]hunderbird|org.gnome.Evolution)$")
+tag("email", "class", "^(eu.betterbird.Betterbird)$")
+tag("projects", "class", "^(codium|codium-url-handler|VSCodium)$")
+tag("projects", "class", "^(VSCode|code|code-url-handler)$")
+tag("projects", "class", "^(jetbrains-.+)$")
+tag("screenshare", "class", "^(com.obsproject.Studio)$")
+tag("im", "class", "^([Dd]iscord|[Ww]ebCord|[Vv]esktop)$")
+tag("im", "class", "^([Ff]erdium)$")
+tag("im", "class", "^([Ww]hatsapp-for-linux)$")
+tag("im", "class", "^(ZapZap|com.rtosta.zapzap)$")
+tag("im", "class", "^(org.telegram.desktop|io.github.tdesktop_x64.TDesktop)$")
+tag("im", "class", "^(teams-for-linux)$")
+tag("im", "class", "^(im.riot.Riot|Element)$")
+tag("games", "class", "^(gamescope)$")
+tag("games", "class", "^(steam_app_\\d+)$")
+tag("gamestore", "class", "^([Ss]team)$")
+tag("gamestore", "title", "^([Ll]utris)$")
+tag("gamestore", "class", "^(com.heroicgameslauncher.hgl)$")
+tag("file-manager", "class", "^([Tt]hunar|org.gnome.Nautilus|[Pp]cmanfm-qt)$")
+tag("file-manager", "class", "^(app.drey.Warp)$")
+tag("wallpaper", "class", "^([Ww]aytrogen)$")
+tag("multimedia", "class", "^([Aa]udacious)$")
+tag("multimedia_video", "class", "^([Mm]pv|vlc)$")
+tag("settings", "title", "^(ROG Control)$")
+tag("settings", "class", "^(wihotspot(-gui)?)$")
+tag("settings", "class", "^([Bb]aobab|org.gnome.[Bb]aobab)$")
+tag("settings", "class", "^(gnome-disks|wihotspot(-gui)?)$")
+tag("settings", "title", "(Kvantum Manager)")
+tag("settings", "class", "^(file-roller|org.gnome.FileRoller)$")
+tag("settings", "class", "^(nm-applet|nm-connection-editor|blueman-manager)$")
+tag("settings", "class", "^(pavucontrol|org.pulseaudio.pavucontrol|com.saivert.pwvucontrol)$")
+tag("settings", "class", "^(qt5ct|qt6ct|[Yy]ad)$")
+tag("settings", "class", "(xdg-desktop-portal-gtk)")
+tag("settings", "class", "^(org.kde.polkit-kde-authentication-agent-1)$")
+tag("settings", "class", "^([Rr]ofi)$")
+tag("viewer", "class", "^(gnome-system-monitor|org.gnome.SystemMonitor|io.missioncenter.MissionCenter)$")
+tag("viewer", "class", "^(evince)$")
+tag("viewer", "class", "^(eog|org.gnome.Loupe)$")
+
+-- Vidéo : pas de flou, opaque
+W({ match = { tag = "multimedia_video*" }, no_blur = true })
+W({ match = { tag = "multimedia_video*" }, opacity = "1.0" })
+
+-- Position
+W({ match = { tag = "KooL_Cheat*" }, center = true })
+W({ match = { class = "^([Tt]hunar)$", title = "negative:(.*[Tt]hunar.*)" }, center = true })
+W({ match = { title = "^(ROG Control)$" }, center = true })
+W({ match = { tag = "KooL-Settings*" }, center = true })
+W({ match = { title = "^(Keybindings)$" }, center = true })
+W({ match = { class = "^(pavucontrol|org.pulseaudio.pavucontrol|com.saivert.pwvucontrol)$" }, center = true })
+W({ match = { class = "^([Ww]hatsapp-for-linux|ZapZap|com.rtosta.zapzap)$" }, center = true })
+W({ match = { class = "^([Ff]erdium)$" }, center = true })
+W({ match = { title = "^(Picture-in-Picture)$" }, move = { "72%", "7%" } })
+
+-- Pas de mise en veille en plein écran
+W({ match = { fullscreen = true }, idle_inhibit = "fullscreen" })
+
+-- Workspaces
+W({ match = { tag = "email*" }, workspace = "1" })
+W({ match = { tag = "browser*" }, workspace = "2" })
+W({ match = { tag = "gamestore*" }, workspace = "5" })
+W({ match = { tag = "im*" }, workspace = "7" })
+W({ match = { tag = "games*" }, workspace = "8" })
+W({ match = { tag = "screenshare*" }, workspace = "4 silent" })
+W({ match = { class = "^(virt-manager)$" }, workspace = "6 silent" })
+W({ match = { class = "^(.virt-manager-wrapped)$" }, workspace = "6 silent" })
+W({ match = { tag = "multimedia*" }, workspace = "9 silent" })
+
+-- Flottant
+for _, t in ipairs({ "KooL_Cheat*", "wallpaper*", "settings*", "viewer*", "KooL-Settings*" }) do W({ match = { tag = t }, float = true }) end
+W({ match = { class = "^([Zz]oom|onedriver|onedriver-launcher)$" }, float = true })
+W({ match = { class = "^(org.gnome.Calculator)$" }, float = true })
+W({ match = { class = "^(mpv|com.github.rafostar.Clapper)$" }, float = true })
+W({ match = { class = "^([Qq]alculate-gtk)$" }, float = true })
+W({ match = { class = "^([Ff]erdium)$" }, float = true })
+W({ match = { title = "^(Picture-in-Picture)$" }, float = true })
+
+-- Popups et dialogues
+W({ match = { title = "^(Authentication Required)$" }, float = true })
+W({ match = { title = "^(Authentication Required)$" }, center = true })
+W({ match = { class = "^(codium|codium-url-handler|VSCodium)$", title = "negative:(.*codium.*|.*VSCodium.*)" }, float = true })
+W({ match = { class = "^(com.heroicgameslauncher.hgl)$", title = "negative:(Heroic Games Launcher)" }, float = true })
+W({ match = { class = "^([Ss]team)$", title = "negative:^([Ss]team)$" }, float = true })
+W({ match = { class = "^([Tt]hunar)$", title = "negative:(.*[Tt]hunar.*)" }, float = true })
+for _, t in ipairs({ "^(Add Folder to Workspace)$", "^(Save As)$" }) do
+  W({ match = { title = t }, float = true })
+  W({ match = { title = t }, size = { "70%", "60%" } })
+  W({ match = { title = t }, center = true })
+end
+W({ match = { initial_title = "^(Open Files)$" }, float = true })
+W({ match = { initial_title = "^(Open Files)$" }, size = { "70%", "60%" } })
+W({ match = { title = "^(SDDM Background)$" }, float = true })
+W({ match = { title = "^(SDDM Background)$" }, center = true })
+W({ match = { title = "^(SDDM Background)$" }, size = { "16%", "12%" } })
+
+-- Opacité (active inactive)
+W({ match = { tag = "browser*" }, opacity = "0.95 0.7" })
+W({ match = { tag = "projects*" }, opacity = "0.9 0.8" })
+W({ match = { tag = "im*" }, opacity = "0.94 0.86" })
+W({ match = { tag = "multimedia*" }, opacity = "0.94 0.86" })
+W({ match = { tag = "file-manager*" }, opacity = "0.9 0.8" })
+W({ match = { tag = "terminal*" }, opacity = "0.9 0.7" })
+W({ match = { tag = "settings*" }, opacity = "0.8 0.7" })
+W({ match = { tag = "viewer*" }, opacity = "0.82 0.75" })
+W({ match = { tag = "wallpaper*" }, opacity = "0.9 0.7" })
+W({ match = { class = "^(gedit|org.gnome.TextEditor|mousepad)$" }, opacity = "0.8 0.7" })
+W({ match = { class = "^(deluge)$" }, opacity = "0.9 0.8" })
+W({ match = { class = "^(im.riot.Riot)$" }, opacity = "0.9 0.8" })
+W({ match = { class = "^(seahorse)$" }, opacity = "0.9 0.8" })
+W({ match = { title = "^(Picture-in-Picture)$" }, opacity = "0.95 0.75" })
+W({ match = { class = "^(jetbrains-.*)$" }, opacity = "1 0.95" })
+
+-- Taille
+W({ match = { tag = "KooL_Cheat*" }, size = { "65%", "90%" } })
+W({ match = { tag = "wallpaper*" }, size = { "70%", "70%" } })
+W({ match = { tag = "settings*" }, size = { "70%", "70%" } })
+W({ match = { class = "^([Ww]hatsapp-for-linux|ZapZap|com.rtosta.zapzap)$" }, size = { "60%", "70%" } })
+W({ match = { class = "^([Ff]erdium)$" }, size = { "60%", "70%" } })
+
+-- Divers
+W({ match = { title = "^(Picture-in-Picture)$" }, pin = true })
+W({ match = { title = "^(Picture-in-Picture)$" }, keep_aspect_ratio = true })
+W({ match = { tag = "games*" }, no_blur = true })
+W({ match = { tag = "games*" }, fullscreen = true })
+W({ match = { class = "^(jetbrains-.*)$" }, no_initial_focus = true }) -- tooltips JetBrains
+W({ match = { title = "^(win.*)$" }, no_initial_focus = true })
+
+-- Vicinae : flottant en bas, épinglé, garde le focus clavier tant qu'il est ouvert
+W({ match = { class = "^(vicinae)$" }, float = true })
+W({ match = { class = "^(vicinae)$" }, move = { 575, 550 } })
+W({ match = { class = "^(vicinae)$" }, pin = true })
+W({ match = { class = "^(vicinae)$" }, stay_focused = true })
+
+-- Layers
+L({ match = { namespace = "^rofi$" }, blur = true })
+L({ match = { namespace = "^rofi$" }, ignore_alpha = 0 })
+L({ match = { namespace = "^notifications$" }, blur = true })
+L({ match = { namespace = "^notifications$" }, ignore_alpha = 0 })
+L({ match = { namespace = "^quickshell:overview$" }, blur = true })
+L({ match = { namespace = "^quickshell:overview$" }, ignore_alpha = 0.5 })

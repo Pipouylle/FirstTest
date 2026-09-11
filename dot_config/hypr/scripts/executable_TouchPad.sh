@@ -1,9 +1,7 @@
 #!/bin/bash
-# /* ---- 💫 https://github.com/JaKooLit 💫 ---- */  ##
 # For disabling touchpad.
-# Edit the Touchpad_Device on ~/.config/hypr/UserConfigs/Laptops.conf according to your system
-# use hyprctl devices to get your system touchpad device name
-# source https://github.com/hyprwm/Hyprland/discussions/4283?sort=new#discussioncomment-8648109
+# Le nom du pavé est celui de lua/laptop.lua (« hyprctl devices » pour le retrouver).
+TOUCHPAD="asue1209:00-04f3:319f-touchpad"
 
 notif="$HOME/.config/swaync/images/ja.png"
 
@@ -12,13 +10,13 @@ export STATUS_FILE="$XDG_RUNTIME_DIR/touchpad.status"
 enable_touchpad() {
     printf "true" >"$STATUS_FILE"
     notify-send -u low -i $notif  " Enabling" " touchpad"
-    hyprctl keyword '$TOUCHPAD_ENABLED' "true" -r
+    hyprctl eval "hl.device({ name = \"$TOUCHPAD\", enabled = true })"
 }
 
 disable_touchpad() {
     printf "false" >"$STATUS_FILE"
     notify-send -u low -i $notif " Disabling" " touchpad"
-    hyprctl keyword '$TOUCHPAD_ENABLED' "false" -r
+    hyprctl eval "hl.device({ name = \"$TOUCHPAD\", enabled = false })"
 }
 
 if ! [ -f "$STATUS_FILE" ]; then

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Attend que Zed soit au premier plan avec <fichier> chargé, puis envoie
+# ctrl-alt-v (= markdown::OpenPreviewToTheSide, voir ~/.config/zed/keymap.json).
+# Usage : zed-preview-key <fichier>   (à lancer en arrière-plan avant/après zeditor)
+
+BASE="$(basename -- "$1")"
+zed_active()     { hyprctl -j activewindow 2>/dev/null | grep -q '"class": "dev.zed.Zed'; }
+zed_shows_file() { hyprctl -j activewindow 2>/dev/null | grep -F '"title"' | grep -qF -- "$BASE"; }
+
+for _ in $(seq 1 50); do zed_active && break; sleep 0.2; done      # 10 s max
+zed_active || exit 0                                              # Zed pas au premier plan : pas d'aperçu
+for _ in $(seq 1 20); do zed_shows_file && break; sleep 0.2; done  # 4 s max
+sleep 0.4
+wtype -M ctrl -M alt -k v -m alt -m ctrl

@@ -1,0 +1,7 @@
+Ancienne config hyprlang (JaKooLit), plus chargée depuis la migration Lua du 2026-09-11.
+Retour arrière (nécessite une déconnexion/reconnexion, le reload à chaud Lua→hyprlang plante Hyprland 0.56.2) :
+  mv ~/.config/hypr/hyprland.lua ~/.config/hypr/hyprland.lua.off
+  mv ~/.config/hypr/legacy/hyprland.conf ~/.config/hypr/legacy/configs ~/.config/hypr/legacy/UserConfigs ~/.config/hypr/
+Les scripts (scripts/, UserScripts/) et caelestia (services/Hypr.qml) parlent désormais l'API Lua via « hyprctl eval »
+et restent compatibles hyprlang pour caelestia uniquement ; les scripts devraient être repris de la sauvegarde
+~/.config/hypr.bak-2026-09-11.tar.gz en cas de retour.

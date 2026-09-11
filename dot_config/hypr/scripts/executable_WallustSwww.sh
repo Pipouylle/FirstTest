@@ -37,3 +37,8 @@ if [ "$ln_success" = true ]; then
     # execute wallust skipping tty and terminal changes
     wallust run "$wallpaper_path" -s &
 fi
+
+# Config Lua : les couleurs wallust sont lues au chargement (lua/colors.lua), il faut recharger
+# une fois wallust terminé (il tourne en arrière-plan).
+wait
+hyprctl reload

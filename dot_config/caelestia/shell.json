@@ -23,24 +23,24 @@
             ]
         },
         "idle": {
-            "lockBeforeSleep": true,
             "inhibitWhenAudio": true,
+            "lockBeforeSleep": true,
             "timeouts": [
                 {
-                    "timeout": 900,
-                    "idleAction": "lock"
+                    "idleAction": "lock",
+                    "timeout": 900
                 },
                 {
-                    "timeout": 1200,
                     "idleAction": "dpms off",
-                    "returnAction": "dpms on"
+                    "returnAction": "dpms on",
+                    "timeout": 1200
                 },
                 {
-                    "timeout": 2700,
                     "idleAction": [
                         "systemctl",
                         "suspend-then-hibernate"
-                    ]
+                    ],
+                    "timeout": 2700
                 }
             ]
         }

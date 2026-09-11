@@ -138,3 +138,7 @@ if [[ -n "$choice" ]]; then
     fi
   fi
 fi
+
+# Config Lua : recharger Hyprland une fois les couleurs wallust régénérées.
+wait
+hyprctl reload

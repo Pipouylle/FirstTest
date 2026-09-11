@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Crée une archive zip à côté des fichiers, avec des chemins relatifs à l'intérieur.
+# Usage : yazi-zip <nom[.zip]> <fichier|dossier>...
+name="$1"; shift
+[ -n "$name" ] && [ $# -gt 0 ] || { echo "usage: yazi-zip <nom> <fichiers...>" >&2; exit 1; }
+case "$name" in *.zip) ;; *) name="$name.zip" ;; esac
+dir="$(dirname -- "$1")"
+case "$name" in /*) out="$name" ;; *) out="$dir/$name" ;; esac
+cd "$dir" || exit 1
+args=(); for f in "$@"; do args+=("$(basename -- "$f")"); done
+zip -r -q "$out" "${args[@]}"

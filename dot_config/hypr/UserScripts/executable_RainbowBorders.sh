@@ -1,14 +1,6 @@
 #!/bin/bash
-# /* ---- 💫 https://github.com/JaKooLit 💫 ---- */  ##
-# for rainbow borders animation
-
-function random_hex() {
-    random_hex=("0xff$(openssl rand -hex 3)")
-    echo $random_hex
-}
-
-# rainbow colors only for active window
-hyprctl keyword general:col.active_border $(random_hex)  $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex)  270deg
-
-# rainbow colors for inactive window (uncomment to take effect)
-#hyprctl keyword general:col.inactive_border $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) $(random_hex) 270deg
+# Bordure active en dégradé aléatoire animé (animation borderangle en boucle).
+random_hex() { echo "rgb($(openssl rand -hex 3))"; }
+colors=""
+for _ in $(seq 1 10); do colors="$colors\"$(random_hex)\", "; done
+hyprctl eval "hl.config({ general = { col = { active_border = { colors = { ${colors%, } }, angle = 270 } } } })"
