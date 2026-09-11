@@ -7,3 +7,6 @@ README.md
 
 # Copies des fichiers /etc et script d installation : pas des dotfiles, voir README.
 system
+
+# Script d installation complet (paquets, oh-my-zsh, chezmoi, systeme) : pas un dotfile.
+install.sh

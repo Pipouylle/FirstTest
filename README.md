@@ -17,78 +17,21 @@ Contenu géré :
 | `~/.config/easyeffects/`, `waypaper/`, `fastfetch/`, `vicinae/` | audio, fonds d'écran, fetch, lanceur |
 | `~/.zshrc`, `~/.zprofile`, `~/.condarc` | shell (oh-my-zsh), conda **sans** activation auto de `base` |
 | `~/.local/bin/linux-wallpaperengine` | lanceur Wallpaper Engine |
-| `system/` (non déployé par chezmoi) | copies des fichiers `/etc` + `install.sh` |
+| `install.sh` (racine, non déployé) | installation complète : paquets, oh-my-zsh, chezmoi, système (§1) |
+| `system/` (non déployé par chezmoi) | copies des fichiers `/etc` + `install.sh` (sudo, appelé par le script racine) |
 
 ---
 
 ## 1. Restauration sur une Arch vierge
 
-Ordre à respecter : paquets → oh-my-zsh → chezmoi → script système → redémarrage.
-
-### A. Paquets des dépôts officiels
-
 ```bash
-sudo pacman -S --needed \
-  hyprland hypridle hyprlock hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk \
-  qt6-wayland sddm pipewire wireplumber \
-  networkmanager network-manager-applet dnsmasq wpa_supplicant bluez bluez-utils blueman \
-  kitty zsh lsd fastfetch fzf tree bc jq go-yq \
-  yazi glow micro 7zip zip unzip \
-  zed wtype \
-  awww waypaper wallust nwg-displays \
-  wl-clipboard cliphist grim slurp swappy \
-  brightnessctl playerctl pamixer easyeffects cava btop \
-  ffmpeg imagemagick git base-devel cmake meson ninja \
-  ttf-jetbrains-mono-nerd noto-fonts-emoji \
-  nautilus firefox \
-  zram-generator earlyoom iw power-profiles-daemon python-gobject \
-  chezmoi
-```
-
-Pourquoi ces paquets :
-
-* `hyprland` 0.56+ (config Lua), `hypridle`/`hyprlock` (installés mais **non lancés** : caelestia gère l'inactivité et le verrouillage), `hyprpolkitagent` (agent polkit, lancé par `scripts/Polkit.sh`).
-* `sddm` : écran de connexion, thème `simple_sddm_2` (voir §3).
-* `networkmanager` + `wpa_supplicant` + `dnsmasq` : Wi‑Fi et DNS local. **Ne pas installer/activer `iwd`** (doublon, il crée et supprime lui‑même `wlan0`).
-* `awww` : remplaçant de `swww` (renommé upstream) ; `waypaper` : sélection des fonds ; `wallust` : couleurs depuis le fond d'écran, lues par `lua/colors.lua` et hyprlock ; `nwg-displays` : écrit `monitors.conf`/`workspaces.conf`, que `lua/monitors.lua` relit.
-* `yazi` + `glow` (aperçu Markdown), `jq`/`go-yq` (aperçus JSON/YAML), `7zip`/`zip`/`unzip` (raccourcis `C`/`U`), `micro` (édition dans le terminal).
-* `zed` : le binaire est `zeditor` (alias `zed` dans `.zshrc`) ; `wtype` envoie `ctrl-alt-v` pour ouvrir l'aperçu Markdown côte à côte.
-* `wl-clipboard`/`cliphist` : presse‑papiers ; `grim`/`slurp`/`swappy` : captures ; `brightnessctl`/`playerctl`/`pamixer` : touches média.
-* `zram-generator`, `earlyoom`, `iw`, `power-profiles-daemon`, `python-gobject` : voir §4 « Réglages système ».
-* `ffmpeg`/`imagemagick`/`bc`/`jq` : scripts JaKooLit (aperçus vidéo, météo).
-
-### B. Paquets AUR (`yay -S --needed …`)
-
-```bash
-yay -S --needed quickshell-git caelestia-cli linux-wallpaperengine-git mpvpaper simple-sddm-theme-2-git
-```
-
-* `quickshell-git` : moteur de caelestia-shell. À recompiler (`yay -S quickshell-git`) après une mise à jour de Qt.
-* `caelestia-cli` : commande `caelestia` (schémas, fonds). **Ne pas installer `caelestia-shell`** : le shell tourne depuis la copie gérée `~/.config/quickshell/caelestia/`, qui contient le patch `Hypr.qml` (traduction des dispatchers legacy vers l'API Lua).
-* `linux-wallpaperengine-git` : fonds Steam Workshop (lanceur dans `~/.local/bin`).
-* `mpvpaper` : fonds vidéo (`live_wallpaper` dans `lua/autostart.lua`). Pas installé sur la machine de référence au 2026‑09‑11 : à installer si les fonds vidéo sont utilisés.
-* `simple-sddm-theme-2-git` : thème SDDM (le dossier `/usr/share/sddm/themes/simple_sddm_2` existe sur la machine de référence sans paquet pacman ; réinstaller via l'AUR ou recopier le dossier).
-
-### C. Installés à la main (hors pacman)
-
-* **vicinae** (lanceur, `vicinae server` au démarrage) : AppImage des releases GitHub (<https://github.com/vicinaehq/vicinae>) décompressée dans `/usr/local/lib/vicinae`, lien `/usr/local/bin/vicinae` vers `usr/bin/vicinae`, fichiers `.desktop` dans `/usr/local/share/applications`. Refaire pareil ou utiliser le paquet AUR `vicinae-bin` s'il existe.
-* **Anaconda** dans `~/anaconda3` (facultatif). `~/.condarc` désactive l'activation automatique : sinon `~/anaconda3/bin` passe devant `/usr/bin` et casse `jq`, `python3`, `powerprofilesctl`.
-* **oh-my-zsh** + plugins, avant `chezmoi apply` :
-
-```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
-git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-git clone https://github.com/enrico9034/watch-plugin-zsh.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/watch
-```
-
-### D. Déployer les dotfiles puis le système
-
-```bash
-chezmoi init --apply git@github.com:Pipouylle/FirstTest.git   # ou l'URL https
-sudo bash ~/.local/share/chezmoi/system/install.sh            # /etc, swap, services (§4)
+git clone https://github.com/Pipouylle/FirstTest.git && bash FirstTest/install.sh   # sudo demandé au besoin
 sudo reboot
 ```
+
+`install.sh` est idempotent (relançable) et enchaîne : paquets officiels → `yay` → paquets AUR →
+oh-my-zsh + plugins → `chezmoi init --apply` → `system/install.sh` (sudo : /etc, swap, services, fond SDDM ; §3-4).
+Les listes de paquets sont dans le script (`PACMAN=`, `AUR=`) ; `REPO=…` pour viser un fork.
 
 Après redémarrage, en utilisateur :
 
@@ -97,6 +40,30 @@ tailscale set --accept-dns=false     # si Tailscale est utilisé, voir §4
 powerprofilesctl get                 # doit répondre sans traceback
 zramctl ; swapon --show              # zram0 3,5 Go prio 100 + /swapfile 4 Go
 ```
+
+### Pourquoi ces paquets
+
+* `hyprland` 0.56+ (config Lua), `hypridle`/`hyprlock` (installés mais **non lancés** : caelestia gère l'inactivité et le verrouillage), `hyprpolkitagent` (agent polkit, lancé par `scripts/Polkit.sh`).
+* `sddm` + `simple-sddm-theme-2-git` (AUR) : écran de connexion et son thème (voir §3).
+* `networkmanager` + `wpa_supplicant` + `dnsmasq` : Wi‑Fi et DNS local. **Ne pas installer/activer `iwd`** (doublon, il crée et supprime lui‑même `wlan0`).
+* `quickshell-git` + `caelestia-shell` + `caelestia-cli` + `app2unit` (AUR) : le shell tourne depuis la copie gérée `~/.config/quickshell/caelestia/` (patch `Hypr.qml`), mais ses QML font `import Caelestia`, plugin compilé que seul le paquet `caelestia-shell` fournit. Le paquet installe ses QML dans `/etc/xdg/quickshell/caelestia`, que la copie utilisateur masque : il n'écrase rien. Recompiler `quickshell-git` après une mise à jour de Qt.
+* `vicinae-bin` (AUR) : lanceur, `vicinae server` au démarrage.
+* `awww` : remplaçant de `swww` (renommé upstream) ; `waypaper` (AUR) : sélection des fonds ; `wallust` (AUR) : couleurs depuis le fond d'écran, lues par `lua/colors.lua` et hyprlock ; `nwg-displays` : écrit `monitors.conf`/`workspaces.conf`, que `lua/monitors.lua` relit.
+* `linux-wallpaperengine-git` (AUR) : fonds Steam Workshop (lanceur dans `~/.local/bin`, backend de `waypaper/config.ini`) ; `mpvpaper` (AUR) : fonds vidéo (`live_wallpaper` dans `lua/autostart.lua`).
+* `rofi`, `yad`, `wlogout` (AUR), `libnotify` : menus et notifications des scripts JaKooLit (SUPER+SHIFT+E, SUPER+H, CTRL+ALT+P, fonds d'écran). Les thèmes rofi (`~/.config/rofi/*.rasi`) ne sont pas dans le dépôt.
+* `yazi` + `glow` (aperçu Markdown), `jq`/`go-yq` (aperçus JSON/YAML), `7zip`/`zip`/`unzip` (raccourcis `C`/`U`), `micro` (édition dans le terminal).
+* `zed` : le binaire est `zeditor` (alias `zed` dans `.zshrc`) ; `wtype` envoie `ctrl-alt-v` pour ouvrir l'aperçu Markdown côte à côte.
+* `wl-clipboard`/`cliphist` : presse‑papiers ; `grim`/`slurp`/`swappy` : captures ; `brightnessctl`/`playerctl`/`pamixer` : touches média ; `xdg-user-dirs` : dossier des captures.
+* `ttf-jetbrains-mono-nerd`, `ttf-victor-mono` (AUR) : polices kitty/hyprlock ; `bibata-cursor-theme-bin` (AUR) : curseur de `lua/env.lua` ; `qt6ct`/`nwg-look` : thèmes Qt/GTK (`QT_QPA_PLATFORMTHEME=qt6ct`).
+* `nvm` : sourcé sans garde par `.zshrc` (`/usr/share/nvm/init-nvm.sh`).
+* `zram-generator`, `earlyoom`, `iw`, `power-profiles-daemon`, `python-gobject` : voir §4 « Réglages système ».
+* `ffmpeg`/`imagemagick`/`bc`/`jq` : scripts JaKooLit (aperçus vidéo, météo).
+
+### Hors script (à la main, facultatif)
+
+* **Anaconda** dans `~/anaconda3`. `~/.condarc` désactive l'activation automatique : sinon `~/anaconda3/bin` passe devant `/usr/bin` et casse `jq`, `python3`, `powerprofilesctl`.
+* Outils perso référencés par `.zshrc`/`.zprofile` sans en dépendre : SDKMAN, JetBrains Toolbox, Antigravity, `claude`, `gemini`, Docker/kubectl (plugins oh-my-zsh seulement).
+* Avatar du tableau de bord caelestia : `cp avatar.jpg ~/.face`.
 
 ---
 
@@ -121,13 +88,10 @@ retour arrière dans `~/.config/hypr/README.md`. À retenir :
 
 ## 3. SDDM
 
-`/etc/sddm.conf` (dans `system/`) sélectionne le thème `simple_sddm_2`. Pour synchroniser le fond de
-l'écran de connexion avec le fond d'écran courant (fait par `UserScripts/WallpaperSelect.sh`) :
-
-```bash
-sudo touch /var/lib/sddm_wallpaper.jpg && sudo chown $USER:$USER /var/lib/sddm_wallpaper.jpg
-sudo ln -sf /var/lib/sddm_wallpaper.jpg /usr/share/sddm/themes/simple_sddm_2/Backgrounds/default
-```
+`/etc/sddm.conf` (dans `system/`) sélectionne le thème `simple_sddm_2`. Le fond de l'écran de connexion
+suit le fond d'écran courant : `system/install.sh` crée `/var/lib/sddm_wallpaper.jpg` (propriété de
+l'utilisateur) et y fait pointer `/usr/share/sddm/themes/simple_sddm_2/Backgrounds/default` ;
+`UserScripts/WallpaperSelect.sh` y copie ensuite le fond choisi.
 
 Connexion automatique (facultatif) : `/etc/sddm.conf.d/autologin.conf` avec `[Autologin] User=timothe Session=hyprland`.
 Sans SDDM : décommenter le bloc `exec Hyprland` dans `~/.zprofile`.
@@ -163,8 +127,9 @@ qs kill -c caelestia && qs -c caelestia -d
 
 `services/Hypr.qml` sonde le gestionnaire de config (`hyprctl keyword zz_probe 1`) et traduit
 `workspace N`, `togglespecialworkspace`, `focuswindow`, `movetoworkspace`, `dpms …` en API Lua.
-Sauvegarde du fichier d'origine : `Hypr.qml.bak-2026-09-11`. Ne pas écraser ce fichier avec
-`caelestia-shell` du paquet AUR.
+Sauvegarde du fichier d'origine : `Hypr.qml.bak-2026-09-11`. Le paquet AUR `caelestia-shell` installe
+ses QML dans `/etc/xdg/quickshell/caelestia` (masqués par cette copie) et fournit le plugin compilé
+`Caelestia` : il est requis, et n'écrase pas ce fichier.
 
 ## 6. Yazi, Zed, Kitty
 
