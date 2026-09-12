@@ -10,3 +10,10 @@ system
 
 # Script d installation complet (paquets, oh-my-zsh, chezmoi, systeme) : pas un dotfile.
 install.sh
+
+# Plans et specs d implementation : documentation du depot, pas des dotfiles.
+docs
+
+# Espace de travail jetable de superpowers et ignore-list du depot : pas des dotfiles.
+.superpowers
+.gitignore
