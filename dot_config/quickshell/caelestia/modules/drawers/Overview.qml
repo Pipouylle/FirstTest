@@ -18,7 +18,7 @@ Item {
     id: root
 
     required property ShellScreen screen
-    required property DrawerVisibilities visibilities
+    required property ScreenState visibilities
 
     readonly property bool active: visibilities.overview
     property real offsetScale: active ? 0 : 1
@@ -131,7 +131,7 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                Hypr.dispatch("workspace " + wsCard.modelData.id);
+                                Hypr.dispatch(Hypr.usingLua ? `hl.dsp.focus({ workspace = "${wsCard.modelData.id}" })` : `workspace ${wsCard.modelData.id}`);
                                 root.visibilities.overview = false;
                             }
                         }
@@ -211,9 +211,9 @@ Item {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 onClicked: {
-                                                    Hypr.dispatch("focuswindow address:0x" + windowCard.modelData.address);
+                                                    Hypr.dispatch(Hypr.usingLua ? `hl.dsp.focus({ window = "address:0x${windowCard.modelData.address}" })` : `focuswindow address:0x${windowCard.modelData.address}`);
                                                     if (windowCard.modelData.workspace.id !== Hypr.activeWsId) {
-                                                        Hypr.dispatch("workspace " + windowCard.modelData.workspace.id);
+                                                        Hypr.dispatch(Hypr.usingLua ? `hl.dsp.focus({ workspace = "${windowCard.modelData.workspace.id}" })` : `workspace ${windowCard.modelData.workspace.id}`);
                                                     }
                                                     root.visibilities.overview = false;
                                                 }
@@ -253,7 +253,7 @@ Item {
                                                             radius: Tokens.rounding.full
                                                             color: Colours.palette.m3error
                                                             onClicked: {
-                                                                Hypr.dispatch("killwindow address:0x" + windowCard.modelData.address);
+                                                                Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.kill({ window = "address:0x${windowCard.modelData.address}" })` : `killwindow address:0x${windowCard.modelData.address}`);
                                                             }
                                                         }
 

@@ -67,6 +67,20 @@ clone https://github.com/enrico9034/watch-plugin-zsh.git "$plugins/watch"
 step "dotfiles (chezmoi)"
 if [[ -d ~/.local/share/chezmoi/.git ]]; then chezmoi apply; else chezmoi init --apply "$REPO"; fi
 mkdir -p ~/Pictures/wallpapers   # lu par UserScripts/WallpaperSelect.sh et WallpaperRandom.sh
+LC_ALL=C xdg-user-dirs-update --force   # cree ~/Documents, ~/Music, ~/Videos, etc. (noms anglais : ~/Pictures et ~/Downloads sont codes en dur dans les dotfiles)
+
+step "contrôle de version caelestia-shell"
+# Placé après « dotfiles (chezmoi) » : c'est cette étape qui clone/initialise le dépôt
+# source (chezmoi init --apply), donc "chezmoi source-path" ne pointe vers un chemin
+# existant qu'à partir d'ici. Placé plus tôt, ce garde-fou se déclenchait à chaque
+# installation neuve (want toujours "inconnu"), même quand tout allait bien.
+want=$(cat "$(chezmoi source-path)/dot_config/quickshell/caelestia/dot_upstream-version" 2>/dev/null || echo inconnu)
+have=$(pacman -Q caelestia-shell 2>/dev/null | awk '{print $2}' | cut -d- -f1) || have=absent
+[[ $want == "$have" ]] || cat <<MSG
+ATTENTION : le fork QML de ~/.config/quickshell/caelestia vise caelestia-shell $want,
+mais la version installée est : $have. Le shell risque de ne pas démarrer (API du plugin).
+Voir docs/superpowers/plans/ pour la procédure de portage.
+MSG
 
 step "système : /etc, swap, services (sudo)"
 sudo bash "$(chezmoi source-path)/system/install.sh"

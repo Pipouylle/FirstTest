@@ -5,6 +5,7 @@ import QtQuick.Effects
 import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
+import qs.components.images
 import qs.services
 
 WlSessionLockSurface {
@@ -30,6 +31,15 @@ WlSessionLockSurface {
 
     SequentialAnimation {
         id: unlockAnim
+
+        // `unlocking` passe a vrai des le demarrage de cette animation, ce qui fait
+        // virer l'anneau au vert. Sans cette pause, le retrecissement et le fondu
+        // demarrent dans la meme frame et la confirmation verte est invisible.
+        // On laisse l'anneau vert a l'ecran, puis la sortie s'enchaine : l'ensemble
+        // reste sous la seconde.
+        PauseAnimation {
+            duration: Tokens.anim.durations.extraLarge
+        }
 
         ParallelAnimation {
             Anim {
@@ -154,11 +164,10 @@ WlSessionLockSurface {
         }
     }
 
-    ScreencopyView {
+    Item {
         id: background
 
         anchors.fill: parent
-        captureSource: root.screen
         opacity: 0
 
         layer.enabled: true
@@ -168,6 +177,27 @@ WlSessionLockSurface {
             blur: 1
             blurMax: 64
             blurMultiplier: 1
+        }
+
+        Loader {
+            anchors.fill: parent
+            sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
+        }
+    }
+
+    Component {
+        id: screencopyBackground
+
+        ScreencopyView {
+            captureSource: root.screen
+        }
+    }
+
+    Component {
+        id: wallpaperBackground
+
+        CachingImage {
+            path: Wallpapers.current
         }
     }
 
@@ -181,6 +211,7 @@ WlSessionLockSurface {
         implicitWidth: size
         implicitHeight: size
 
+        visible: Config.lock.enabled
         rotation: 180
         scale: 0
 
