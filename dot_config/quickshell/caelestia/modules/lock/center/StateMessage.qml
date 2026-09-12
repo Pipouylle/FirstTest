@@ -63,8 +63,17 @@ Item {
         return "";
     }
 
+    // Hyprland renvoie parfois une disposition inexploitable pour certains peripheriques
+    // (claviers virtuels notamment) : la chaine litterale "error", ou "Unknown" quand
+    // aucun clavier principal n'est resolu. L'afficher tel quel n'apprend rien a
+    // l'utilisateur et ressemble a une panne ; on se rabat alors sur le message simple.
+    readonly property bool kbLayoutKnown: {
+        const full = Hypr.kbLayoutFull;
+        return !!full && full !== "error" && full !== "Unknown";
+    }
+
     readonly property string stateMsg: {
-        if (Hypr.kbLayout !== Hypr.defaultKbLayout) {
+        if (root.kbLayoutKnown && Hypr.kbLayout !== Hypr.defaultKbLayout) {
             if (Hypr.capsLock && Hypr.numLock)
                 return qsTr("Caps lock and Num lock are ON.\nKeyboard layout: %1").arg(Hypr.kbLayoutFull);
             if (Hypr.capsLock)
