@@ -28,6 +28,13 @@ if [[ ! -e /swapfile ]]; then
 fi
 grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap defaults 0 0' >> /etc/fstab
 
+echo "== fond SDDM synchronisé avec le fond d'écran (UserScripts/WallpaperSelect.sh) =="
+theme=/usr/share/sddm/themes/simple_sddm_2
+if [[ -d $theme && -n ${SUDO_USER:-} ]]; then
+  [[ -e /var/lib/sddm_wallpaper.jpg ]] || install -m644 -o "$SUDO_USER" -g "$(id -gn "$SUDO_USER")" /dev/null /var/lib/sddm_wallpaper.jpg
+  ln -sf /var/lib/sddm_wallpaper.jpg "$theme/Backgrounds/default"
+fi
+
 echo "== services =="
 systemctl enable --now NetworkManager earlyoom
 systemctl enable sddm bluetooth
