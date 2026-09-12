@@ -55,6 +55,15 @@ fi
 step "paquets AUR"
 yay -S --needed --noconfirm "${AUR[@]}"
 
+step "contrôle de version caelestia-shell"
+want=$(cat "$(chezmoi source-path)/dot_config/quickshell/caelestia/dot_upstream-version" 2>/dev/null || echo inconnu)
+have=$(pacman -Q caelestia-shell 2>/dev/null | awk '{print $2}' | cut -d- -f1)
+[[ $want == "$have" ]] || cat <<MSG
+ATTENTION : le fork QML de ~/.config/quickshell/caelestia vise caelestia-shell $want,
+mais $have est installé. Le shell risque de ne pas démarrer (API du plugin).
+Voir docs/superpowers/plans/ pour la procédure de portage.
+MSG
+
 step "oh-my-zsh + plugins"
 [[ -d ~/.oh-my-zsh ]] || sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
 plugins=${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins

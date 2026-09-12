@@ -3,7 +3,6 @@ import QtQuick.Layouts
 import Quickshell
 import Caelestia.Config
 import Caelestia.Services
-import qs.components
 import qs.components.controls
 import qs.services
 import qs.modules.nexus.common
@@ -11,7 +10,7 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    // Lyrics backends, ordered to match LyricsBackend::Backend (Auto, Local, LRCLIB, NetEase)
+    // Lyrics backends, ordered to match config::LyricsBackend (Auto, Local, LRCLIB, NetEase)
     readonly property list<MenuItem> lyricsItems: [
         MenuItem {
             text: qsTr("Auto")
@@ -27,7 +26,7 @@ PageBase {
         }
     ]
 
-    // GPU options + the config string each maps to (see Gpu::parseType)
+    // GPU types, ordered to match config::GpuType (Auto, Nvidia, Generic, None)
     readonly property list<MenuItem> gpuItems: [
         MenuItem {
             text: qsTr("Auto")
@@ -42,18 +41,6 @@ PageBase {
             text: qsTr("None")
         }
     ]
-    readonly property list<string> gpuValues: ["", "NVIDIA", "GENERIC", "None"]
-
-    function gpuKeyToIndex(key: string): int {
-        const u = (key ?? "").trim().toUpperCase();
-        if (u === "")
-            return 0; // Auto
-        if (u === "NVIDIA")
-            return 1;
-        if (u === "GENERIC")
-            return 2;
-        return 3; // None
-    }
 
     title: qsTr("Services")
 
@@ -78,14 +65,27 @@ PageBase {
             }
         }
 
-        // Polling
+        // Notifications
         SectionHeader {
             first: true
+            text: qsTr("Notifications")
+        }
+
+        NavRow {
+            first: true
+            last: true
+            icon: "notifications"
+            text: qsTr("Notifications")
+            subtext: qsTr("Notifications, toasts, timeouts")
+            onClicked: root.nState.openSubPage(1)
+        }
+
+        // Polling
+        SectionHeader {
             text: qsTr("Polling")
         }
 
         StepperRow {
-            Layout.fillWidth: true
             first: true
             label: qsTr("Media refresh")
             subtext: qsTr("How often the media position updates (ms)")
@@ -97,7 +97,6 @@ PageBase {
         }
 
         StepperRow {
-            Layout.fillWidth: true
             label: qsTr("System stats refresh")
             subtext: qsTr("CPU, memory and GPU update interval (seconds)")
             value: GlobalConfig.dashboard.resourceUpdateInterval / 1000
@@ -108,7 +107,6 @@ PageBase {
         }
 
         StepperRow {
-            Layout.fillWidth: true
             last: true
             label: qsTr("Wi-Fi rescan")
             subtext: qsTr("How often available networks are rescanned (seconds)")
@@ -125,7 +123,6 @@ PageBase {
         }
 
         SelectRow {
-            Layout.fillWidth: true
             first: true
             label: qsTr("Lyrics backend")
             subtext: qsTr("Source used to fetch synced lyrics")
@@ -135,7 +132,6 @@ PageBase {
         }
 
         SelectRow {
-            Layout.fillWidth: true
             last: true
             label: qsTr("Default player")
             subtext: qsTr("Preferred media player when several are open")
@@ -152,7 +148,6 @@ PageBase {
         }
 
         StepperRow {
-            Layout.fillWidth: true
             first: true
             label: qsTr("Volume step")
             subtext: qsTr("Amount the volume changes per scroll (%)")
@@ -164,7 +159,6 @@ PageBase {
         }
 
         StepperRow {
-            Layout.fillWidth: true
             label: qsTr("Brightness step")
             subtext: qsTr("Amount the brightness changes per scroll (%)")
             value: Math.round(GlobalConfig.services.brightnessIncrement * 100)
@@ -175,7 +169,6 @@ PageBase {
         }
 
         StepperRow {
-            Layout.fillWidth: true
             last: true
             label: qsTr("Max volume")
             subtext: qsTr("Upper limit for output volume (%)")
@@ -192,7 +185,6 @@ PageBase {
         }
 
         StepperRow {
-            Layout.fillWidth: true
             first: true
             label: qsTr("Visualiser bars")
             subtext: qsTr("Number of bars in the audio visualisers")
@@ -204,7 +196,6 @@ PageBase {
         }
 
         ToggleRow {
-            Layout.fillWidth: true
             text: qsTr("Smart colour scheme")
             subtext: qsTr("Derive theme mode and variant from the wallpaper")
             checked: GlobalConfig.services.smartScheme
@@ -212,14 +203,13 @@ PageBase {
         }
 
         SelectRow {
-            Layout.fillWidth: true
             last: true
             label: qsTr("GPU")
             subtext: Gpu.name ? qsTr("Monitoring: %1").arg(Gpu.name) : qsTr("Override for GPU type")
             menuOnTop: true
             menuItems: root.gpuItems
-            active: root.gpuItems[root.gpuKeyToIndex(GlobalConfig.services.gpuType)]
-            onSelected: item => GlobalConfig.services.gpuType = root.gpuValues[root.gpuItems.indexOf(item)]
+            active: root.gpuItems[GlobalConfig.services.gpuType]
+            onSelected: item => GlobalConfig.services.gpuType = root.gpuItems.indexOf(item)
         }
     }
 }

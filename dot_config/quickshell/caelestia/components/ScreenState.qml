@@ -1,6 +1,9 @@
 import Quickshell
 
 PersistentProperties {
+    required property ShellScreen modelData
+
+    // Drawer visibilities
     property bool bar
     property bool osd
     property bool session
@@ -11,5 +14,8 @@ PersistentProperties {
     property bool overview
     property bool barIsTop: true
     onBarIsTopChanged: if (!barIsTop) barIsTop = true
-}
 
+    // Dashboard state
+    property int dashboardTab
+    property date dashboardDate: new Date()
+}

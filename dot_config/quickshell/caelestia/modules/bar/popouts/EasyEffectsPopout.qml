@@ -39,12 +39,21 @@ Item {
             font: Tokens.font.body.builders.medium.weight(Font.Medium).build()
         }
 
-        SwitchRow {
+        RowLayout {
             Layout.minimumWidth: 260
-            label: qsTr("Effets audio")
-            checked: EasyEffects.active
-            enabled: !EasyEffects.busy
-            onToggled: checked => EasyEffects.setEnabled(checked)
+            Layout.fillWidth: true
+            spacing: Tokens.spacing.medium
+
+            StyledText {
+                Layout.fillWidth: true
+                text: qsTr("Effets audio")
+            }
+
+            StyledSwitch {
+                enabled: !EasyEffects.busy
+                checked: EasyEffects.active
+                onToggled: EasyEffects.setEnabled(checked)
+            }
         }
 
         StyledText {

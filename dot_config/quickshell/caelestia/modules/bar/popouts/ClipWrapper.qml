@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Caelestia.Config
 import qs.components
 import qs.modules.bar.popouts // Need to import this module so the Wrapper type is the same as others
 

@@ -16,9 +16,9 @@ Region {
     readonly property real clampedThickness: win.contentItem.Config.border.clampedThickness
 
     x: bar.clampedWidth + win.dragMaskPadding
-    y: (bar.visibilities.barIsTop ? 60 : clampedThickness) + win.dragMaskPadding
+    y: (bar.screenState.barIsTop ? 60 : clampedThickness) + win.dragMaskPadding
     width: win.width - bar.clampedWidth - clampedThickness - win.dragMaskPadding * 2
-    height: win.height - (bar.visibilities.barIsTop ? (60 + clampedThickness) : clampedThickness * 2) - win.dragMaskPadding * 2
+    height: win.height - (bar.screenState.barIsTop ? (60 + clampedThickness) : clampedThickness * 2) - win.dragMaskPadding * 2
     intersection: Intersection.Xor
 
     R {
@@ -87,7 +87,7 @@ Region {
         required property Item panel
 
         x: panel.x + root.bar.implicitWidth
-        y: panel.y + (root.bar.visibilities.barIsTop ? 60 : root.borderThickness)
+        y: panel.y + (root.bar.screenState.barIsTop ? 60 : root.borderThickness)
         width: panel.width
         height: panel.height
         intersection: Intersection.Subtract

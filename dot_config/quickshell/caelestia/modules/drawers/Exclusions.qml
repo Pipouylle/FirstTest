@@ -19,7 +19,7 @@ Scope {
 
     ExclusionZone {
         anchors.top: true
-        exclusiveZone: root.bar.visibilities.barIsTop ? 54 : contentItem.Config.border.thickness
+        exclusiveZone: root.bar.screenState.barIsTop ? 54 : contentItem.Config.border.thickness
     }
 
     ExclusionZone {

@@ -4,16 +4,14 @@ import QtQuick
 import QtQuick.Layouts
 import Caelestia.Config
 import Caelestia.Services
-import Caelestia.Internal
 import qs.components
 import qs.components.controls
-import qs.components.misc
 import qs.services
 
 StyledRect {
     id: root
 
-    required property DrawerVisibilities visibilities
+    required property ScreenState visibilities
     property string section: "all" // "all", "left", "right"
 
     readonly property color cpuColor: Colours.palette.m3primary
@@ -43,7 +41,7 @@ StyledRect {
         service: Gpu
     }
 
-    Ref {
+    ServiceRef {
         service: NetworkUsage
     }
 
@@ -83,7 +81,7 @@ StyledRect {
 
         // GPU Metric (Usage + Temp)
         RowLayout {
-            visible: (root.section === "all" || root.section === "left") && Gpu.type !== Gpu.None
+            visible: (root.section === "all" || root.section === "left") && Gpu.type !== GpuType.None
             spacing: Tokens.spacing.small
             Layout.alignment: Qt.AlignVCenter
 
@@ -198,7 +196,7 @@ StyledRect {
                     }
                     StyledText {
                         text: {
-                            const fmt = NetworkUsage.formatBytes(NetworkUsage.downloadSpeed ?? 0);
+                            const fmt = NetworkUsage.formatBytesRate(NetworkUsage.downloadSpeed ?? 0);
                             return fmt ? `${fmt.value.toFixed(0)} ${fmt.unit}` : "0 B/s";
                         }
                         font: Tokens.font.body.builders.small.scale(0.85).weight(Font.Medium).build()
@@ -215,7 +213,7 @@ StyledRect {
                     }
                     StyledText {
                         text: {
-                            const fmt = NetworkUsage.formatBytes(NetworkUsage.uploadSpeed ?? 0);
+                            const fmt = NetworkUsage.formatBytesRate(NetworkUsage.uploadSpeed ?? 0);
                             return fmt ? `${fmt.value.toFixed(0)} ${fmt.unit}` : "0 B/s";
                         }
                         font: Tokens.font.body.builders.small.scale(0.85).weight(Font.Medium).build()
