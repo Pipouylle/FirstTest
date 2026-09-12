@@ -67,7 +67,7 @@ clone https://github.com/enrico9034/watch-plugin-zsh.git "$plugins/watch"
 step "dotfiles (chezmoi)"
 if [[ -d ~/.local/share/chezmoi/.git ]]; then chezmoi apply; else chezmoi init --apply "$REPO"; fi
 mkdir -p ~/Pictures/wallpapers   # lu par UserScripts/WallpaperSelect.sh et WallpaperRandom.sh
-xdg-user-dirs-update             # cree ~/Documents, ~/Music, ~/Videos, etc. et ~/.config/user-dirs.dirs
+LC_ALL=C xdg-user-dirs-update --force   # cree ~/Documents, ~/Music, ~/Videos, etc. (noms anglais : ~/Pictures et ~/Downloads sont codes en dur dans les dotfiles)
 
 step "système : /etc, swap, services (sudo)"
 sudo bash "$(chezmoi source-path)/system/install.sh"
