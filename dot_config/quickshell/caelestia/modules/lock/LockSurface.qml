@@ -32,6 +32,15 @@ WlSessionLockSurface {
     SequentialAnimation {
         id: unlockAnim
 
+        // `unlocking` passe a vrai des le demarrage de cette animation, ce qui fait
+        // virer l'anneau au vert. Sans cette pause, le retrecissement et le fondu
+        // demarrent dans la meme frame et la confirmation verte est invisible.
+        // On laisse l'anneau vert a l'ecran, puis la sortie s'enchaine : l'ensemble
+        // reste sous la seconde.
+        PauseAnimation {
+            duration: Tokens.anim.durations.extraLarge
+        }
+
         ParallelAnimation {
             Anim {
                 target: lockContent

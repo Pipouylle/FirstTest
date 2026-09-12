@@ -32,11 +32,12 @@ ColumnLayout {
         font: Tokens.font.title.builders.medium.weight(Font.DemiBold).build()
     }
 
-    ProfilePic {
-        Layout.alignment: Qt.AlignHCenter
-        Layout.topMargin: Tokens.spacing.extraExtraLarge * root.centerScale
-        Layout.bottomMargin: Tokens.spacing.extraLarge * root.centerScale
-        centerWidth: root.centerWidth
+    // The profile picture used to sit here; it now lives inside the ring. These
+    // two spacers take the height it freed and centre the ring / state message
+    // pair in what is left under the clock and date, instead of letting the
+    // whole column bunch up at the top. They collapse first on short screens.
+    Item {
+        Layout.fillHeight: true
     }
 
     SegmentedRing {
@@ -49,5 +50,9 @@ ColumnLayout {
     StateMessage {
         Layout.fillWidth: true
         pam: root.lock.pam
+    }
+
+    Item {
+        Layout.fillHeight: true
     }
 }

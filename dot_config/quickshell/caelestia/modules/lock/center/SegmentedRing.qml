@@ -22,7 +22,7 @@ Item {
     //  N — how many arc pieces the crown is split into.
     property int segments: 7
     //  Radius of an arc piece at rest…
-    readonly property real restRadius: activeRadius - Math.round(Tokens.spacing.medium * centerScale)
+    readonly property real restRadius: activeRadius - travel
     //  …and once a keystroke has pushed it out.
     readonly property real activeRadius: ringSize / 2 - arcStroke / 2
     //  Distance kept between two neighbouring pieces, in PIXELS, not degrees.
@@ -30,7 +30,7 @@ Item {
     //  piece to grow as it slides outwards:
     //      arc length = 2*PI*r/N - gap
     //      angular opening = 2*PI/N - gap/r
-    readonly property real gap: Math.round(Tokens.spacing.small * centerScale)
+    readonly property real gap: Math.max(Tokens.spacing.extraSmall, Math.round(ringSize / 18))
 
     // The angular opening of `gap` for a piece sitting at radius r, in degrees.
     // The round caps stick out by half a stroke at each end, so the stroke is
@@ -42,20 +42,32 @@ Item {
     // No idle token exists for the lock, so it lives here as a tweakable knob.
     property int idleTimeout: 5000
 
-    // Cover art in the middle while a player is around, caelestia logo
-    // otherwise. Overridable so the centre can be driven without a player.
+    // Cover art in the middle while a player is around, the user's profile
+    // picture otherwise. Overridable so the centre can be driven without a
+    // player.
     property bool showCover: !!Players.active
 
-    readonly property real ringSize: Math.round(centerWidth * 0.24)
-    readonly property real arcStroke: Math.max(4, Math.round(Tokens.padding.small * centerScale))
+    // Every length below is a fraction of ringSize, so growing the ring grows the
+    // whole drawing at the proportions that were validated at the smaller size,
+    // instead of leaving thin strokes on a big circle. The Tokens floors only
+    // ever bite on very short screens.
+    // Diameter as a fraction of the centre column. 0.70 is the measured ceiling
+    // that still leaves 54 px of slack at 1080p with a two-line error message
+    // (the worst real case, and the one that dimensions the column); it is also
+    // exactly the footprint the profile picture used to take in the column
+    // before it moved inside the ring.
+    property real sizeFactor: 0.70
+    readonly property real ringSize: Math.round(centerWidth * sizeFactor)
+    readonly property real arcStroke: Math.max(Tokens.padding.extraSmall, Math.round(ringSize / 18))
+    readonly property real travel: Math.max(Tokens.spacing.small, Math.round(ringSize / 11))
     readonly property real segmentAngle: 360 / segments
 
     // The thick circle the crown revolves around, and the room left inside it
-    // for the cover art / logo.
-    readonly property real centreStroke: Math.max(8, Math.round(Tokens.padding.medium * centerScale))
-    readonly property real centreRadius: restRadius - arcStroke / 2 - Math.round(Tokens.spacing.small * centerScale) - centreStroke / 2
+    // for the cover art / profile picture.
+    readonly property real centreStroke: Math.max(Tokens.padding.small, Math.round(ringSize / 11))
+    readonly property real centreGap: Math.max(Tokens.spacing.extraSmall, Math.round(ringSize / 18))
+    readonly property real centreRadius: restRadius - arcStroke / 2 - centreGap - centreStroke / 2
     readonly property real centreInner: (centreRadius - centreStroke / 2) * 2
-    readonly property real logoSize: centreInner - Math.round(Tokens.spacing.extraSmall * centerScale) * 2
 
     // Single source of truth: which pieces are out is derived from the pam
     // buffer, never from a counter of our own. With `segments` = 7 a new turn
@@ -76,6 +88,11 @@ Item {
 
     property bool errorFlash
     readonly property bool succeeded: lock.unlocking
+
+    // Read here rather than inside ShakeStep: Tokens is an attached property and
+    // only resolves its screen on an Item, not on a NumberAnimation.
+    readonly property real shakeWide: Math.round(Tokens.spacing.medium * centerScale)
+    readonly property real shakeNarrow: Math.round(Tokens.spacing.extraSmall * centerScale)
 
     // Movement says "a key was struck"; colour is kept for the two outcomes.
     readonly property color arcColour: {
@@ -264,12 +281,12 @@ Item {
             }
         }
 
-        // Cover art while something is playing, caelestia logo otherwise.
+        // Cover art while something is playing, profile picture otherwise.
         AnimLoader {
             id: centre
 
             anchors.centerIn: parent
-            sourceComp: root.showCover ? coverComp : logoComp
+            sourceComp: root.showCover ? coverComp : pfpComp
         }
     }
 
@@ -284,11 +301,11 @@ Item {
     }
 
     Component {
-        id: logoComp
+        id: pfpComp
 
-        Logo {
-            implicitWidth: root.logoSize
-            implicitHeight: root.logoSize
+        ProfilePic {
+            implicitSize: root.centreInner
+            shape.shape: MaterialShape.Circle
         }
     }
 
@@ -301,16 +318,16 @@ Item {
             value: true
         }
         ShakeStep {
-            to: Math.round(Tokens.spacing.medium * root.centerScale)
+            to: root.shakeWide
         }
         ShakeStep {
-            to: -Math.round(Tokens.spacing.medium * root.centerScale)
+            to: -root.shakeWide
         }
         ShakeStep {
-            to: Math.round(Tokens.spacing.extraSmall * root.centerScale)
+            to: root.shakeNarrow
         }
         ShakeStep {
-            to: -Math.round(Tokens.spacing.extraSmall * root.centerScale)
+            to: -root.shakeNarrow
         }
         ShakeStep {
             to: 0

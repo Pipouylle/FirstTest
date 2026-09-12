@@ -9,25 +9,27 @@ import qs.components.images
 import qs.services
 import qs.utils
 
+// Deliberately mirrors the surface of components/widgets/CoverArt.qml — size it,
+// and reach its outline through `shape` — so the two are interchangeable inside
+// the lock ring's centre.
 Item {
     id: root
 
-    required property int centerWidth
+    property real implicitSize
+    property string source: `${Paths.home}/.face`
+    readonly property alias shape: shape
     readonly property color bgColour: Colours.tPalette.m3surfaceContainerHighest
 
-    implicitWidth: Math.round(centerWidth * 0.7)
-    implicitHeight: {
-        shape.height; // Force update when shape height changes
-        return shape.pathBounds().height;
-    }
+    implicitWidth: implicitSize
+    implicitHeight: implicitSize
 
     MaterialShape {
         id: shape
 
         anchors.centerIn: parent
-        implicitSize: root.implicitWidth
+        implicitSize: Math.min(root.width, root.height)
 
-        shape: MaterialShape.ClamShell
+        shape: MaterialShape.Circle
         color: Qt.alpha(root.bgColour, 1)
         opacity: root.bgColour.a
         layer.enabled: true
@@ -38,7 +40,9 @@ Item {
 
         text: "person"
         color: Colours.palette.m3onSurfaceVariant
-        fontStyle: Tokens.font.icon.size(root.centerWidth / 4).build()
+        // Same ratio CoverArt gives its own fallback glyph, so the two centres
+        // read at the same weight when neither has an image.
+        fontStyle: Tokens.font.icon.size((root.width * 0.35) || 1).build()
         visible: pfp.status !== Image.Ready
     }
 
@@ -46,7 +50,7 @@ Item {
         id: pfp
 
         anchors.fill: shape
-        path: `${Paths.home}/.face`
+        path: root.source
 
         layer.enabled: true
         layer.effect: Mask {
