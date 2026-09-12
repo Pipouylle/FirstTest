@@ -14,6 +14,12 @@ install.sh
 # Plans et specs d implementation : documentation du depot, pas des dotfiles.
 docs
 
-# Espace de travail jetable de superpowers et ignore-list du depot : pas des dotfiles.
+# .superpowers (espace de travail jetable) et .gitignore : ces deux lignes n'ont en
+# realite aucun effet. chezmoi ne traite jamais comme un dotfile a deployer une entree
+# de la source dont le nom commence par un point litteral (seul le prefixe "dot_" declenche
+# un deploiement) ; ces deux fichiers etaient donc deja hors de sa portee avant meme cet
+# ajout (verifie via `chezmoi ignored` / `chezmoi managed`), contrairement a "docs" ci-dessus
+# qui, lui, agit reellement. Conservees ici a titre documentaire, pour rendre l'intention
+# explicite au lecteur.
 .superpowers
 .gitignore

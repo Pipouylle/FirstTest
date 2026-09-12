@@ -86,7 +86,7 @@
 **Interfaces :**
 - Produit : `ScreenState.overview` (bool) et `ScreenState.barIsTop` (bool, toujours vrai) consommés par les tâches 2 et 6.
 
-- [ ] **Étape 1 : lancer le test de recette et constater l'échec**
+- [x] **Étape 1 : lancer le test de recette et constater l'échec**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -94,7 +94,7 @@ timeout 10 qs -p ./shell.qml 2>&1 | grep -E "Configuration Loaded|ERROR" | head 
 ```
 Attendu : ÉCHEC — marqueurs de conflit `<<<<<<<` → erreur de syntaxe QML.
 
-- [ ] **Étape 2 : résoudre `components/ScreenState.qml`**
+- [x] **Étape 2 : résoudre `components/ScreenState.qml`**
 
 Le fork ajoute `overview`/`barIsTop`, l'upstream ajoute l'état du dashboard. Garder **les deux** :
 
@@ -108,7 +108,7 @@ Le fork ajoute `overview`/`barIsTop`, l'upstream ajoute l'état du dashboard. Ga
     property date dashboardDate: new Date()
 ```
 
-- [ ] **Étape 3 : résoudre `modules/drawers/ContentWindow.qml`**
+- [x] **Étape 3 : résoudre `modules/drawers/ContentWindow.qml`**
 
 Reprendre la forme 2.4.0 (`root.screenState`, l'ancien `visibilities` n'existe plus) et y réinjecter la condition `overview` du fork :
 
@@ -116,7 +116,7 @@ Reprendre la forme 2.4.0 (`root.screenState`, l'ancien `visibilities` n'existe p
         opacity: (root.screenState.session && Config.session.enabled) || root.screenState.overview || panels.popouts.detachedMode !== "" ? 0.5 : 0
 ```
 
-- [ ] **Étape 4 : éliminer le doublon `DrawerVisibilities.qml`**
+- [x] **Étape 4 : éliminer le doublon `DrawerVisibilities.qml`**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -125,7 +125,7 @@ grep -rn "DrawerVisibilities" --include='*.qml' . | grep -v '^\./\.git'
 ```
 Attendu : plus aucune occurrence de `DrawerVisibilities`. Chaque occurrence trouvée doit devenir `ScreenState`.
 
-- [ ] **Étape 5 : vérifier que le QML compile jusqu'ici**
+- [x] **Étape 5 : vérifier que le QML compile jusqu'ici**
 
 ```bash
 timeout 10 qs -p ./shell.qml 2>&1 | grep -E "ScreenState|DrawerVisibilities|Configuration Loaded" | head -5
@@ -145,7 +145,7 @@ Attendu : plus d'erreur mentionnant `ScreenState` ni `DrawerVisibilities` (d'aut
 - Consomme : `ScreenState.barIsTop` (tâche 1).
 - Produit : l'entrée `taskbarClock` de la barre reste masquée, `TopClock` l'affiche en haut.
 
-- [ ] **Étape 1 : comprendre la nouvelle structure de barre**
+- [x] **Étape 1 : comprendre la nouvelle structure de barre**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -153,7 +153,7 @@ sed -n '1,120p' <(git show v2.4.0:modules/bar/Bar.qml)
 ```
 En 2.4.0 la barre est pilotée par un modèle et des `DelegateChoice`/`EntryWrapper` ; `WrappedLoader` n'existe plus sous cette forme.
 
-- [ ] **Étape 2 : résoudre `modules/bar/Bar.qml`**
+- [x] **Étape 2 : résoudre `modules/bar/Bar.qml`**
 
 Conserver la structure 2.4.0 (`EntryWrapper` + `objectName: "taskbarClock"`) et reporter l'intention du fork (horloge de barre masquée car déportée dans `TopClock`) en rendant l'entrée invisible :
 
@@ -166,7 +166,7 @@ Conserver la structure 2.4.0 (`EntryWrapper` + `objectName: "taskbarClock"`) et 
                     }
 ```
 
-- [ ] **Étape 3 : résoudre les 2 blocs de `modules/bar/components/Clock.qml`**
+- [x] **Étape 3 : résoudre les 2 blocs de `modules/bar/components/Clock.qml`**
 
 Bloc 1 — garder la version 2.4.0 (`asynchronous`/`active`/`visible`) : l'ancien `visible: false` du fork est désormais porté par `Bar.qml` (étape 2), le dupliquer ici casserait l'horloge du popout calendrier.
 
@@ -178,7 +178,7 @@ Bloc 1 — garder la version 2.4.0 (`asynchronous`/`active`/`visible`) : l'ancie
 
 Bloc 2 — garder intégralement la version 2.4.0 (les `StyledText` jour/date + le `StyledRect` séparateur). Le fork n'avait fait que remplacer ce bloc par un `Rectangle` invisible ; ce masquage est lui aussi repris par `Bar.qml`.
 
-- [ ] **Étape 4 : vérifier**
+- [x] **Étape 4 : vérifier**
 
 ```bash
 timeout 10 qs -p ./shell.qml 2>&1 | grep -E "Bar\.qml|Clock\.qml" | head -5
@@ -197,7 +197,7 @@ Attendu : aucune erreur pointant `Bar.qml` ou `Clock.qml`.
 - Consomme : singleton `EasyEffects` (`services/EasyEffects.qml`, propriétés `active`, `running`).
 - Produit : une entrée d'état nommée `easyeffects` que `modules/bar/popouts/Content.qml` ouvre au clic.
 
-- [ ] **Étape 1 : lire la version 2.4.0 en entier avant de toucher au fichier**
+- [x] **Étape 1 : lire la version 2.4.0 en entier avant de toucher au fichier**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -205,11 +205,11 @@ git show v2.4.0:modules/bar/components/StatusIcons.qml
 ```
 Upstream a remplacé la liste de `WrappedLoader` par un modèle + `DelegateChoice { roleValue: "..." ; delegate: EntryWrapper { ... } }`, avec des sous-composants dédiés dans `modules/bar/components/status/` (`BatteryStatus.qml`, `BluetoothStatus.qml`, `LockStatus.qml`).
 
-- [ ] **Étape 2 : résoudre le conflit en gardant la structure 2.4.0**
+- [x] **Étape 2 : résoudre le conflit en gardant la structure 2.4.0**
 
 Prendre la branche `v2.4.0` du bloc en conflit dans son intégralité (volume, micro, disposition clavier, réseau, ethernet, bluetooth sont tous fournis par 2.4.0 — le fork ne faisait que les recopier). **Seul ajout propre au fork à reporter : l'icône EasyEffects.**
 
-- [ ] **Étape 3 : réinjecter l'entrée EasyEffects dans le modèle 2.4.0**
+- [x] **Étape 3 : réinjecter l'entrée EasyEffects dans le modèle 2.4.0**
 
 En 2.4.0 la liste d'icônes n'est plus codée en dur : elle vient de la config
 (`values: root.Config.bar.statusIcons.values.filter(e => e.enabled)`, ligne 64), dont le schéma
@@ -238,7 +238,7 @@ Ajouter d'abord le `DelegateChoice`, dans le `DelegateChooser { role: "id" }` de
                 }
 ```
 
-- [ ] **Étape 3b : déclarer l'entrée dans la config utilisateur, puis vérifier qu'elle n'est pas mise en quarantaine**
+- [x] **Étape 3b : déclarer l'entrée dans la config utilisateur, puis vérifier qu'elle n'est pas mise en quarantaine**
 
 `~/.config/caelestia/shell.json` ne définit pas `bar.statusIcons` : les valeurs par défaut du C++
 s'appliquent. Y ajouter la liste complète avec `easyeffects` :
@@ -268,7 +268,7 @@ refuse l'entrée. Dans ce cas seulement, replier le widget hors du modèle : le 
 du `ColumnLayout { id: iconColumn }`, après le `Repeater`, et le câbler au popout en reprenant le
 `name` utilisé par `modules/bar/popouts/Content.qml`.
 
-- [ ] **Étape 4 : vérifier**
+- [x] **Étape 4 : vérifier**
 
 ```bash
 timeout 10 qs -p ./shell.qml 2>&1 | grep -E "StatusIcons|EasyEffects" | head -5
@@ -282,7 +282,7 @@ Attendu : aucune erreur pointant `StatusIcons.qml` ni `EasyEffects`.
 **Fichiers :**
 - Modifier : `services/Hypr.qml` (conflit, 1 bloc)
 
-- [ ] **Étape 1 : constater que 2.4.0 gère le Lua nativement**
+- [x] **Étape 1 : constater que 2.4.0 gère le Lua nativement**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -291,7 +291,7 @@ grep -n "luaProbe" services/Hypr.qml
 ```
 Le fork avait ajouté un `luaProbe` maison parce que la base ne savait pas détecter `hyprland.lua`. La 2.4.0 expose `usingLua` et rappelle `reloadDynamicConfs()` sur changement.
 
-- [ ] **Étape 2 : résoudre en faveur de 2.4.0 et supprimer le `luaProbe`**
+- [x] **Étape 2 : résoudre en faveur de 2.4.0 et supprimer le `luaProbe`**
 
 ```qml
     onUsingLuaChanged: reloadDynamicConfs()
@@ -305,7 +305,7 @@ grep -n "luaProbe" services/Hypr.qml
 ```
 Attendu après nettoyage : aucune occurrence.
 
-- [ ] **Étape 3 : vérifier**
+- [x] **Étape 3 : vérifier**
 
 ```bash
 timeout 10 qs -p ./shell.qml 2>&1 | grep -E "Hypr\.qml" | head -5
@@ -319,7 +319,7 @@ Attendu : aucune erreur pointant `Hypr.qml`.
 **Fichiers :**
 - Modifier : `shell.qml` (conflit, 1 bloc)
 
-- [ ] **Étape 1 : résoudre en gardant `id: root` (2.4.0) et `watchFiles: false` (fork)**
+- [x] **Étape 1 : résoudre en gardant `id: root` (2.4.0) et `watchFiles: false` (fork)**
 
 L'`id: root` est requis par la 2.4.0 (référencé ailleurs dans le fichier). Le `watchFiles: false` est un choix délibéré du fork : le shell est déployé par chezmoi, donc la surveillance de fichiers n'apporte rien et provoque des rechargements parasites.
 
@@ -329,7 +329,7 @@ L'`id: root` est requis par la 2.4.0 (référencé ailleurs dans le fichier). Le
     settings.watchFiles: false
 ```
 
-- [ ] **Étape 2 : vérifier qu'aucun marqueur de conflit ne subsiste dans tout l'arbre**
+- [x] **Étape 2 : vérifier qu'aucun marqueur de conflit ne subsiste dans tout l'arbre**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -347,14 +347,14 @@ Attendu : aucune sortie.
 **Interfaces :**
 - Consomme : `ScreenState` (tâche 1), `NetworkUsage` depuis `Caelestia.Services`, `Nmcli`.
 
-- [ ] **Étape 1 : identifier précisément ce que le fichier importe et utilise**
+- [x] **Étape 1 : identifier précisément ce que le fichier importe et utilise**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
 grep -nE "^import|NetworkUsage|DrawerVisibilities|\bNetwork\b|SparklineItem|CircularBuffer" modules/bar/components/PerformanceSummary.qml
 ```
 
-- [ ] **Étape 2 : supprimer l'import `Caelestia.Internal`, devenu inutile**
+- [x] **Étape 2 : supprimer l'import `Caelestia.Internal`, devenu inutile**
 
 Inventaire réel du fichier : les composants instanciés sont `CircularProgress`, `MaterialIcon`,
 `Ref`, `ServiceRef`, `RowLayout`, `StyledRect`, `StyledText`, et les services référencés sont
@@ -366,7 +366,7 @@ Supprimer la ligne 7 :
 import Caelestia.Internal
 ```
 
-- [ ] **Étape 3 : migrer `DrawerVisibilities` vers `ScreenState`**
+- [x] **Étape 3 : migrer `DrawerVisibilities` vers `ScreenState`**
 
 Ligne 16 :
 ```qml
@@ -385,14 +385,14 @@ Chaque site d'appel doit passer l'objet `ScreenState` de la tâche 1.
 (`plugin/src/Caelestia/Services/networkusage.hpp`) : les lignes 201 et 218 n'ont pas à changer.
 `NetworkUsage` vient désormais de `Caelestia.Services`, déjà importé ligne 6 — rien à ajouter.
 
-- [ ] **Étape 4 : prendre modèle sur la carte réseau 2.4.0 pour l'usage de `NetworkUsage`**
+- [x] **Étape 4 : prendre modèle sur la carte réseau 2.4.0 pour l'usage de `NetworkUsage`**
 
 ```bash
 git show v2.4.0:modules/dashboard/performance/NetworkCard.qml | sed -n '1,80p'
 ```
 Elle montre l'API courante : `NetworkUsage.uploadBuffer`, `NetworkUsage.downloadBuffer`, `NetworkUsage.historyLength`, `NetworkUsage.downloadSpeed`, `NetworkUsage.formatBytesRate(...)`.
 
-- [ ] **Étape 5 : vérifier qu'aucune API supprimée ne subsiste dans tout l'arbre**
+- [x] **Étape 5 : vérifier qu'aucune API supprimée ne subsiste dans tout l'arbre**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -410,7 +410,7 @@ Attendu : aucune sortie.
 - `modules/bar/popouts/Content.qml`, `modules/dashboard/Wrapper.qml`, `modules/Shortcuts.qml`, `services/Audio.qml`
 - `modules/bar/popouts/CalendarPopout.qml`, `modules/bar/popouts/ClipWrapper.qml`, `modules/drawers/Regions.qml`, `modules/drawers/Exclusions.qml`, `assets/wrap_term_launch.sh` → ajoutés/modifiés par le fork sans contrepartie upstream : vérifier seulement qu'ils compilent (aucune API supprimée n'y figure d'après l'inventaire).
 
-- [ ] **Étape 1 : afficher, pour chaque fichier, ce que le fork avait changé**
+- [x] **Étape 1 : afficher, pour chaque fichier, ce que le fork avait changé**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -423,7 +423,7 @@ for f in modules/notifications/Content.qml modules/notifications/Notification.qm
 done
 ```
 
-- [ ] **Étape 2 : pour chaque fichier, vérifier que l'intention du fork survit dans le fichier fusionné**
+- [x] **Étape 2 : pour chaque fichier, vérifier que l'intention du fork survit dans le fichier fusionné**
 
 Contrôle ciblé du groupement de notifications :
 ```bash
@@ -437,7 +437,7 @@ grep -n "MouseArea\|TapHandler\|dispatch" modules/drawers/Overview.qml
 ```
 Attendu : les cartes d'espace de travail portent toujours un gestionnaire de clic qui appelle `Hypr.dispatch(...)`.
 
-- [ ] **Étape 3 : vérifier**
+- [x] **Étape 3 : vérifier**
 
 ```bash
 timeout 10 qs -p ./shell.qml 2>&1 | grep -E "Configuration Loaded|ERROR" | head -10
@@ -448,7 +448,7 @@ Attendu : `Configuration Loaded`, aucune ligne `ERROR`.
 
 ### Tâche 8 : recette de chargement et essai réel
 
-- [ ] **Étape 1 : chargement propre depuis l'arbre de travail**
+- [x] **Étape 1 : chargement propre depuis l'arbre de travail**
 
 ```bash
 cd /tmp/claude-1000/-home-timothe/ee3bca95-b902-44af-8915-15b03f90b450/scratchpad/port
@@ -456,7 +456,7 @@ timeout 10 qs -p ./shell.qml 2>&1 | grep -E "Configuration Loaded|ERROR"
 ```
 Attendu : exactement une ligne `Configuration Loaded`, aucune `ERROR`. **Ne pas passer à la tâche 9 tant que ce n'est pas le cas.**
 
-- [ ] **Étape 2 : conclure le merge**
+- [x] **Étape 2 : conclure le merge**
 
 ```bash
 git add -A && git commit -q -m "port: fork caelestia sur upstream 2.4.0" && git log --oneline -1
@@ -466,7 +466,7 @@ git add -A && git commit -q -m "port: fork caelestia sur upstream 2.4.0" && git 
 
 ### Tâche 9 : livraison chezmoi
 
-- [ ] **Étape 1 : recopier l'arbre porté dans la source chezmoi**
+- [x] **Étape 1 : recopier l'arbre porté dans la source chezmoi**
 
 Ne copier que les fichiers du shell (pas `.git`, ni `plugin/`, `nix/`, `extras/`, `scripts/`, `.github/`, `CMakeLists.txt`, `README.md`, `flake.*`, `.envrc`, `.clang-format`, `.gitignore`, `.vscode/`) :
 
@@ -479,14 +479,14 @@ cp -a "$SRC/shell.qml" "$SRC/LICENSE" "$DST/"
 find "$DST" -name '*.orig' -delete
 ```
 
-- [ ] **Étape 2 : contrôler le diff chezmoi avant application**
+- [x] **Étape 2 : contrôler le diff chezmoi avant application**
 
 ```bash
 chezmoi diff .config/quickshell/caelestia | head -40
 chezmoi status .config/quickshell/caelestia | head -20
 ```
 
-- [ ] **Étape 3 : appliquer et vérifier sur la cible réelle**
+- [x] **Étape 3 : appliquer et vérifier sur la cible réelle**
 
 ```bash
 chezmoi apply .config/quickshell/caelestia
@@ -494,7 +494,7 @@ timeout 10 qs -c caelestia 2>&1 | grep -E "Configuration Loaded|ERROR"
 ```
 Attendu : `Configuration Loaded`, aucune `ERROR`.
 
-- [ ] **Étape 4 : démarrer le shell pour de vrai et contrôler visuellement**
+- [x] **Étape 4 : démarrer le shell pour de vrai et contrôler visuellement**
 
 ```bash
 qs -c caelestia -d
@@ -505,19 +505,25 @@ Attendu : le processus tourne ; barre, horloge en haut, icône EasyEffects visib
 notify-send "test" "groupement"; notify-send "test" "groupement 2"
 ```
 
-- [ ] **Étape 5 : noter la version de référence pour éviter une nouvelle dérive silencieuse**
+- [x] **Étape 5 : noter la version de référence pour éviter une nouvelle dérive silencieuse**
 
-C'est la cause racine de la panne : rien dans le dépôt n'indiquait sur quelle version de `caelestia-shell` le fork était aligné. Créer `dot_config/quickshell/caelestia/.upstream-version` :
+C'est la cause racine de la panne : rien dans le dépôt n'indiquait sur quelle version de `caelestia-shell` le fork était aligné. Créer `dot_config/quickshell/caelestia/dot_upstream-version` :
+
+> **Piège découvert à la livraison :** le fichier doit s'appeler `dot_upstream-version` dans la
+> source chezmoi (convention `dot_` → déployé comme `.upstream-version` dans `~`). Un fichier
+> nommé littéralement `.upstream-version` dans la source serait ignoré par chezmoi (il ignore
+> nativement les entrées de la source dont le nom commence par un point littéral) et ne serait
+> donc jamais déployé.
 
 ```bash
-echo "2.4.0" > ~/.local/share/chezmoi/dot_config/quickshell/caelestia/.upstream-version
+echo "2.4.0" > ~/.local/share/chezmoi/dot_config/quickshell/caelestia/dot_upstream-version
 ```
 
 Et ajouter dans `install.sh`, juste après l'étape « paquets AUR », un garde-fou :
 
 ```bash
 step "contrôle de version caelestia-shell"
-want=$(cat "$(chezmoi source-path)/dot_config/quickshell/caelestia/.upstream-version" 2>/dev/null || echo inconnu)
+want=$(cat "$(chezmoi source-path)/dot_config/quickshell/caelestia/dot_upstream-version" 2>/dev/null || echo inconnu)
 have=$(pacman -Q caelestia-shell 2>/dev/null | awk '{print $2}' | cut -d- -f1)
 [[ $want == "$have" ]] || cat <<MSG
 ATTENTION : le fork QML de ~/.config/quickshell/caelestia vise caelestia-shell $want,
@@ -526,7 +532,7 @@ Voir docs/superpowers/plans/ pour la procédure de portage.
 MSG
 ```
 
-- [ ] **Étape 6 : commit**
+- [x] **Étape 6 : commit**
 
 ```bash
 cd ~/.local/share/chezmoi
@@ -542,8 +548,9 @@ Merge 3-voies de v2.4.0 dans le fork, migration des imports du plugin et
 report des 4 personnalisations (widget EasyEffects, notifs groupees,
 Overview cliquable, horloge/perfs en haut de barre).
 
-Ajoute .upstream-version et un garde-fou dans install.sh pour que la
-prochaine derive soit signalee au lieu de casser silencieusement."
+Ajoute .upstream-version (dot_upstream-version cote depot) et un garde-fou
+dans install.sh pour que la prochaine derive soit signalee au lieu de
+casser silencieusement."
 ```
 
 ---
@@ -552,7 +559,7 @@ prochaine derive soit signalee au lieu de casser silencieusement."
 
 **Fichiers :** aucun fichier du dépôt ; actions sur `$HOME`.
 
-- [ ] **Étape 1 : créer les dossiers utilisateur XDG**
+- [x] **Étape 1 : créer les dossiers utilisateur XDG**
 
 Ils n'existent pas (pas de `~/Documents`, `~/Videos`, `~/Music`, ni `~/.config/user-dirs.dirs`) :
 
@@ -562,7 +569,7 @@ ls ~ && cat ~/.config/user-dirs.dirs
 ```
 Attendu : les dossiers standard existent et `user-dirs.dirs` est créé.
 
-- [ ] **Étape 2 : garnir `~/Pictures/wallpapers`, actuellement vide**
+- [x] **Étape 2 : garnir `~/Pictures/wallpapers`, actuellement vide**
 
 `install.sh` crée le dossier mais ne le remplit pas ; `waypaper --restore` et `awww` n'ont donc rien à afficher.
 
@@ -571,7 +578,7 @@ cp /etc/xdg/quickshell/caelestia/assets/wallpaper.webp ~/Pictures/wallpapers/
 ls -l ~/Pictures/wallpapers/
 ```
 
-- [ ] **Étape 3 : ajouter la création du dossier XDG à `install.sh`**
+- [x] **Étape 3 : ajouter la création du dossier XDG à `install.sh`**
 
 Pour que la prochaine réinstallation n'ait pas le même trou, dans `install.sh`, à côté du `mkdir -p ~/Pictures/wallpapers` existant :
 
@@ -579,7 +586,7 @@ Pour que la prochaine réinstallation n'ait pas le même trou, dans `install.sh`
 xdg-user-dirs-update
 ```
 
-- [ ] **Étape 4 : commit**
+- [x] **Étape 4 : commit**
 
 ```bash
 cd ~/.local/share/chezmoi
