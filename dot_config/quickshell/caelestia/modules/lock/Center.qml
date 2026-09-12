@@ -39,7 +39,7 @@ ColumnLayout {
         centerWidth: root.centerWidth
     }
 
-    PasswordInput {
+    SegmentedRing {
         Layout.alignment: Qt.AlignHCenter
         centerScale: Math.max(0.8, root.centerScale)
         centerWidth: root.centerWidth
