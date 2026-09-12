@@ -42,7 +42,14 @@
                 "id": "battery",
                 "enabled": true
             }
-        ]
+        ],
+        "tray": {
+            "hiddenIcons": [
+                "vicinae",
+                "nm-applet",
+                "blueman"
+            ]
+        }
     },
     "general": {
         "apps": {

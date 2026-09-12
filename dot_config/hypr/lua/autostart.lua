@@ -24,8 +24,9 @@ hl.on("hyprland.start", function()
   hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
   hl.exec_cmd(scripts .. "/Polkit.sh")
 
-  hl.exec_cmd("nm-applet --indicator")
-  hl.exec_cmd("blueman-applet")
+  -- nm-applet et blueman-applet ne servaient qu'a poser une icone dans le tray, en
+  -- doublon des indicateurs reseau et bluetooth natifs de la barre caelestia (qui gere
+  -- aussi la saisie du mot de passe wifi et l'appairage). Ils ne sont plus lances.
   hl.exec_cmd("qs -c caelestia -d")   -- barre, notifications, verrouillage
   hl.exec_cmd("vicinae server")       -- lanceur
 
@@ -33,6 +34,6 @@ hl.on("hyprland.start", function()
   hl.exec_cmd("wl-paste --type image --watch cliphist store")
 
   hl.exec_cmd(user_scripts .. "/RainbowBorders.sh")
-  hl.exec_cmd("easyeffects --service-mode")
+  hl.exec_cmd("easyeffects --hide-window")  -- `--service-mode` etait la CLI d'EasyEffects 7
   hl.exec_cmd(scripts .. "/PortalHyprland.sh")
 end)
