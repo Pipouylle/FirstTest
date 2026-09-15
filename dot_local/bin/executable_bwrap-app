@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# bwrap-app : Lance n'importe quelle application dans un Mount Namespace privé
+# Usage : bwrap-app <commande_ou_binaire> [arguments...]
+# Exemple : bwrap-app discord
+#           bwrap-app spotify
+# ==============================================================================
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: $0 <nom_application> [arguments...]"
+    echo "Exemples:"
+    echo "  $0 discord"
+    echo "  $0 vlc video.mp4"
+    exit 1
+fi
+
+APP_CMD="$1"
+shift
+APP_NAME=$(basename "$APP_CMD")
+
+# Dossier de données isolé pour l'application
+APP_DATA_DIR="$HOME/.local/share/secure-profiles/$APP_NAME"
+mkdir -p "$APP_DATA_DIR"
+chmod 700 "$APP_DATA_DIR"
+
+mkdir -p "$HOME/Downloads"
+
+echo "🛡️  Lancement de [$APP_NAME] dans un Mount Namespace Bubblewrap..."
+echo "📁 Profil isolé : $APP_DATA_DIR"
+echo "🚫 Vos autres fichiers personnels (~/.ssh, ~/.claude, etc.) sont invisibles."
+
+# Résolution du chemin absolu du binaire
+BIN_PATH=$(command -v "$APP_CMD" || echo "$APP_CMD")
+
+exec bwrap \
+    --ro-bind /usr /usr \
+    --ro-bind /lib /lib \
+    --ro-bind /lib64 /lib64 \
+    --ro-bind /bin /bin \
+    --ro-bind /etc /etc \
+    --ro-bind-try /opt /opt \
+    --ro-bind-try /run/dbus /run/dbus \
+    --dev /dev \
+    --proc /proc \
+    --tmpfs /tmp \
+    --bind "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR" \
+    --tmpfs "$HOME" \
+    --bind "$APP_DATA_DIR" "$HOME/.config/$APP_NAME" \
+    --bind "$HOME/Downloads" "$HOME/Downloads" \
+    --ro-bind-try "$HOME/.icons" "$HOME/.icons" \
+    --ro-bind-try "$HOME/.local/share/fonts" "$HOME/.local/share/fonts" \
+    --ro-bind-try "$HOME/.config/fontconfig" "$HOME/.config/fontconfig" \
+    "$BIN_PATH" "$@"

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# bwrap-chromium : Lance Chromium dans un Mount Namespace privé via Bubblewrap
+# - Isole totalement le profil Chromium du reste de la machine
+# - Sur le système hôte, ~/.config/chromium est inaccessible aux malwares
+# - Chromium ne peut voir ni ~/.ssh, ni ~/.claude, ni les autres applications
+# ==============================================================================
+set -euo pipefail
+
+SECURE_DIR="$HOME/.local/share/secure-profiles/chromium"
+HOST_CONFIG="$HOME/.config/chromium"
+
+# Création du dossier de profil sécurisé avec permissions strictes
+if [[ ! -d "$SECURE_DIR" ]]; then
+    mkdir -p "$SECURE_DIR"
+    chmod 700 "$SECURE_DIR"
+    # Migration initiale si l'ancien profil existe sur l'hôte
+    if [[ -d "$HOST_CONFIG" && "$(ls -A "$HOST_CONFIG" 2>/dev/null)" ]]; then
+        echo "==> Migration initiale du profil Chromium vers l'espace sécurisé..."
+        cp -a "$HOST_CONFIG"/. "$SECURE_DIR/"
+        # Vider le dossier hôte pour que les malwares ne trouvent rien
+        echo "==> Vidage du dossier hôte ~/.config/chromium..."
+        rm -rf "${HOST_CONFIG:?}"/*
+    fi
+fi
+
+# S'assurer que le point de montage existe
+mkdir -p "$HOST_CONFIG"
+mkdir -p "$HOME/Downloads"
+
+# Lancement dans le Mount Namespace privé
+exec bwrap \
+    --ro-bind /usr /usr \
+    --ro-bind /lib /lib \
+    --ro-bind /lib64 /lib64 \
+    --ro-bind /bin /bin \
+    --ro-bind /etc /etc \
+    --ro-bind-try /opt /opt \
+    --ro-bind-try /run/dbus /run/dbus \
+    --dev /dev \
+    --proc /proc \
+    --tmpfs /tmp \
+    --bind "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR" \
+    --tmpfs "$HOME" \
+    --bind "$SECURE_DIR" "$HOME/.config/chromium" \
+    --bind "$HOME/Downloads" "$HOME/Downloads" \
+    --ro-bind-try "$HOME/.config/chromium-flags.conf" "$HOME/.config/chromium-flags.conf" \
+    --ro-bind-try "$HOME/.icons" "$HOME/.icons" \
+    --ro-bind-try "$HOME/.local/share/fonts" "$HOME/.local/share/fonts" \
+    --ro-bind-try "$HOME/.config/fontconfig" "$HOME/.config/fontconfig" \
+    /usr/lib/chromium/chromium "$@"
