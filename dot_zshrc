@@ -105,3 +105,6 @@ agy() {
     command -v keyring-vault >/dev/null && keyring-vault unlock
     command agy "$@"
 }
+
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/ssh-agent.socket"
+
