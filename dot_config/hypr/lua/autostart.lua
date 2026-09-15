@@ -23,6 +23,8 @@ hl.on("hyprland.start", function()
   hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
   hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
   hl.exec_cmd(scripts .. "/Polkit.sh")
+  hl.exec_cmd("keepassxc --minimized")
+  hl.exec_cmd("opensnitch-ui")
 
   -- nm-applet et blueman-applet ne servaient qu'a poser une icone dans le tray, en
   -- doublon des indicateurs reseau et bluetooth natifs de la barre caelestia (qui gere

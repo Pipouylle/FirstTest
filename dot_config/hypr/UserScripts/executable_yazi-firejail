@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# yazi-firejail : Lance un fichier/script/application dans un bac à sable Firejail
+# Usage : yazi-firejail [--net-none | --net-up] <fichier>...
+# ==============================================================================
+set -euo pipefail
+
+NET_MODE="none"
+if [[ "${1:-}" == "--net-none" ]]; then
+    NET_MODE="none"
+    shift
+elif [[ "${1:-}" == "--net-up" ]]; then
+    NET_MODE="up"
+    shift
+fi
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: $0 [--net-none|--net-up] <fichier>"
+    exit 1
+fi
+
+TARGET="$1"
+if [[ ! -e "$TARGET" ]]; then
+    echo "Erreur : Le fichier '$TARGET' n'existe pas."
+    exit 1
+fi
+
+# Création d'un environnement privé éphémère
+SANDBOX_DIR=$(mktemp -d /tmp/yazi-firejail.XXXXXX)
+cleanup() {
+    rm -rf "$SANDBOX_DIR"
+}
+trap cleanup EXIT INT TERM
+
+# Copie de la cible dans le dossier temporaire
+BASENAME=$(basename "$TARGET")
+cp -a "$TARGET" "$SANDBOX_DIR/"
+SANDBOX_TARGET="$SANDBOX_DIR/$BASENAME"
+
+# Préparation des options Firejail
+FJ_OPTS=(
+    "--noprofile"
+    "--private=$SANDBOX_DIR"
+    "--env=WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}"
+    "--env=DISPLAY=${DISPLAY:-:1}"
+    "--env=XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+)
+
+if [[ "$NET_MODE" == "none" ]]; then
+    FJ_OPTS+=("--net=none")
+    echo "🛡️  Lancement Firejail [Réseau DÉSACTIVÉ (--net=none)] : $BASENAME"
+else
+    echo "🛡️  Lancement Firejail [Réseau ACTIF] : $BASENAME"
+fi
+echo "📁 Dossier virtuel éphémère : $SANDBOX_DIR"
+echo "--------------------------------------------------------"
+
+# Détermination du mode d'exécution
+is_gui=0
+if [[ "$BASENAME" =~ \.(AppImage)$ ]] || [[ -x "$TARGET" && "$(file -b --mime-type "$TARGET")" == application/x-pie-executable* ]]; then
+    chmod +x "$SANDBOX_TARGET"
+    firejail "${FJ_OPTS[@]}" "$SANDBOX_TARGET"
+    is_gui=1
+elif [[ "$BASENAME" =~ \.(py)$ ]]; then
+    firejail "${FJ_OPTS[@]}" python "$SANDBOX_TARGET"
+elif [[ "$BASENAME" =~ \.(sh|bash)$ ]]; then
+    firejail "${FJ_OPTS[@]}" bash "$SANDBOX_TARGET"
+elif [[ -x "$TARGET" ]]; then
+    chmod +x "$SANDBOX_TARGET"
+    firejail "${FJ_OPTS[@]}" "$SANDBOX_TARGET"
+else
+    # Fichier quelconque : tenter xdg-open ou affichage
+    firejail "${FJ_OPTS[@]}" xdg-open "$SANDBOX_TARGET" 2>/dev/null || firejail "${FJ_OPTS[@]}" cat "$SANDBOX_TARGET"
+fi
+
+echo "--------------------------------------------------------"
+echo "✅ Fin d'exécution du bac à sable."
+read -r -p "Appuyez sur Entrée pour fermer..."

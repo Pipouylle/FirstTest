@@ -35,9 +35,20 @@ if [[ -d $theme && -n ${SUDO_USER:-} ]]; then
   ln -sf /var/lib/sddm_wallpaper.jpg "$theme/Backgrounds/default"
 fi
 
+echo "== sécurité et sauvegardes système (Timeshift & OpenSnitch) =="
+if [[ -f "$here/etc/timeshift/timeshift.json" ]]; then
+  mkdir -p /etc/timeshift
+  install -Dm644 "$here/etc/timeshift/timeshift.json" /etc/timeshift/timeshift.json
+fi
+if [[ -f "$here/etc/systemd/system/timeshift-boot.service" ]]; then
+  install -Dm644 "$here/etc/systemd/system/timeshift-boot.service" /etc/systemd/system/timeshift-boot.service
+  systemctl enable timeshift-boot.service
+fi
+
 echo "== services =="
 systemctl enable --now NetworkManager earlyoom
 systemctl enable sddm bluetooth
+systemctl enable --now opensnitchd 2>/dev/null || systemctl enable --now opensnitch 2>/dev/null || true
 # iwd crée/supprime lui-même wlan0 et fait doublon avec wpa_supplicant : jamais actif ici.
 for s in iwd netbird rustdesk docker.service; do systemctl disable --now "$s" 2>/dev/null || true; done
 systemctl enable docker.socket 2>/dev/null || true   # docker à la demande, si installé

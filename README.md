@@ -11,14 +11,29 @@ Contenu géré :
 | `~/.config/hypr/` | Hyprland en **Lua** (`hyprland.lua` + `lua/`), scripts, hyprlock, hypridle, profils d'écran, `legacy/` (ancienne config hyprlang, non chargée) |
 | `~/.config/quickshell/caelestia/` | caelestia-shell (barre, notifications, verrouillage, OSD), avec le patch `services/Hypr.qml` pour l'API Lua |
 | `~/.config/caelestia/` | réglages caelestia (`shell.json`) |
-| `~/.config/yazi/` | gestionnaire de fichiers : ouvreurs Zed/micro, zip/unzip, aperçus glow/jq/yq (plugins inclus, déjà patchés pour Yazi 26.x) |
+| `~/.config/yazi/` | gestionnaire de fichiers : ouvreurs Zed/micro, zip/unzip, aperçus glow/jq/yq, et **bac à sable Firejail (touche `O`)** |
 | `~/.config/zed/` | keymap (aperçu Markdown `ctrl-alt-v`), settings, thème caelestia |
 | `~/.config/kitty/` | terminal + thèmes |
+| `~/.config/chromium-flags.conf` | flags Chromium : force le chiffrement via Secret Service (`--password-store=gnome-libsecret`) |
 | `~/.config/easyeffects/`, `waypaper/`, `fastfetch/`, `vicinae/` | audio, fonds d'écran, fetch, lanceur |
-| `~/.zshrc`, `~/.zprofile`, `~/.condarc` | shell (oh-my-zsh), conda **sans** activation auto de `base` |
+| `~/.local/bin/keyring-vault` | coffre-fort éphémère en RAM pour les tokens API (Claude, Antigravity) via KeePassXC/Keyring |
+| `~/.zshrc`, `~/.zprofile`, `~/.condarc` | shell (oh-my-zsh), wrappers de sécurité pour `claude` et `agy`, conda **sans** activation auto de `base` |
 | `~/.local/bin/linux-wallpaperengine` | lanceur Wallpaper Engine |
-| `install.sh` (racine, non déployé) | installation complète : paquets, oh-my-zsh, chezmoi, système (§1) |
-| `system/` (non déployé par chezmoi) | copies des fichiers `/etc` + `install.sh` (sudo, appelé par le script racine) |
+| `install.sh` (racine, non déployé) | installation complète : paquets (dont Timeshift, KeePassXC, OpenSnitch, Firejail), oh-my-zsh, chezmoi, système |
+| `system/` (non déployé par chezmoi) | copies des fichiers `/etc` (zram, earlyoom, timeshift) + `install.sh` (sudo, appelé par le script racine) |
+| `docs/` | **Guides spécialisés détaillés** (installation, maintenance, architecture technique de sécurité) |
+
+---
+
+## 📚 Guides et Documentation Dédiée
+
+Pour aller plus loin et gérer l'ensemble des cas d'usage, deux guides complets sont disponibles dans `docs/` :
+
+* 🛠️ **[Guide d'Installation, Déploiement et Maintenance](docs/INSTALLATION_ET_MAINTENANCE.md)** :  
+  Procédure pas à pas d'installation complète d'Arch Linux, choix et gestion du trousseau KeePassXC (restaurer une base existante vs en créer une nouvelle), configuration des applications (Chromium, Discord, Firejail), politique d'entretien du système et **procédures de restauration (rollback) de l'OS avec Timeshift** (en mode graphique, en console TTY ou depuis une clé Live USB).
+
+* 🛡️ **[Architecture de Sécurité & Fonctionnement des Technologies](docs/SECURITE_ET_ARCHITECTURE.md)** :  
+  Explication technique approfondie du fonctionnement sous le capot : comment Timeshift gère les instantanés incrémentaux par *hard links* sur ext4 sans ralentir le boot (`Nice=19`, `idle`), fonctionnement du protocole Secret Service et des popups d'autorisation ACL dans KeePassXC, isolation d'applications dans des namespaces Linux en RAM par Firejail, blocage des exfiltrations de données par le pare-feu sortant OpenSnitch, et architecture du coffre éphémère `keyring-vault`.
 
 ---
 
@@ -58,6 +73,11 @@ zramctl ; swapon --show              # zram0 3,5 Go prio 100 + /swapfile 4 Go
 * `nvm` : sourcé sans garde par `.zshrc` (`/usr/share/nvm/init-nvm.sh`).
 * `zram-generator`, `earlyoom`, `iw`, `power-profiles-daemon`, `python-gobject` : voir §4 « Réglages système ».
 * `ffmpeg`/`imagemagick`/`bc`/`jq` : scripts JaKooLit (aperçus vidéo, météo).
+* `timeshift` : instantanés incrémentaux automatiques de l'OS au boot (`timeshift-boot.service`, conservation des 5 derniers démarrages).
+* `keepassxc` : gestionnaire de coffre-fort et fournisseur Secret Service avec popups d'autorisation ACL par application.
+* `opensnitch` : pare-feu applicatif sortant pour bloquer les fuites et exfiltrations de données ou tokens.
+* `firejail` : bac à sable isolant les programmes dans un dossier éphémère en RAM (accessible depuis Yazi avec la touche `O`).
+* `chromium` + `discord` : navigateur principal (chiffré via Secret Service) et messagerie.
 
 ### Hors script (à la main, facultatif)
 
@@ -137,6 +157,8 @@ ses QML dans `/etc/xdg/quickshell/caelestia` (masqués par cette copie) et fourn
   (`UserScripts/yazi-zed-swap`) ; `.md` → Zed avec aperçu côte à côte (`UserScripts/zed-md-preview`) ;
   `micro` dans le même terminal ; `C` = zip, `U` = unzip ; dossiers → Zed. Kitty exporte `KITTY_PID`,
   utilisé pour retrouver la fenêtre.
+  **Touche `O` sur n'importe quel fichier** : propose désormais également l'exécution isolée en bac à sable
+  **`Firejail (Private, Pas d'Internet)`** et **`Firejail (Private, Internet Actif)`** (`UserScripts/yazi-firejail`).
 * Zed : `~/.config/zed/keymap.json` lie `ctrl-alt-v` à `markdown::OpenPreviewToTheSide`
   (le keymap JetBrains masque `ctrl-k`). Le thème caelestia est dans `themes/`.
 * Kitty : le thème vient de `~/.zshrc` (`cat ~/.local/state/caelestia/sequences.txt`), donc les terminaux
@@ -147,7 +169,17 @@ ses QML dans `/etc/xdg/quickshell/caelestia` (masqués par cette copie) et fourn
 Les portails sont lancés par `scripts/PortalHyprland.sh` depuis `lua/autostart.lua`. Dans Chromium/Brave :
 `chrome://flags` → *Preferred Ozone platform* → **Wayland**.
 
-## 8. Synchroniser
+## 8. Sécurité et Restauration Système (Rollback)
+
+* **Timeshift au boot** : un instantané incrémental par liens physiques est créé à chaque démarrage via `timeshift-boot.service` (conserve les 5 derniers démarrages).
+  - Restauration graphique : `sudo timeshift-gtk`.
+  - Restauration d'urgence en TTY (si le bureau plante) : `sudo timeshift --restore`.
+* **KeePassXC (Secret Service)** : lancé minimisé au démarrage (`lua/autostart.lua`). Intercepte les demandes de clés et affiche une alerte d'autorisation par application.
+* **OpenSnitch** : pare-feu applicatif actif au démarrage (`opensnitch-ui`), surveille et bloque les connexions sortantes suspectes.
+* **Tokens API en RAM (`keyring-vault`)** : les jetons Claude et Agy ne sont chargés qu'en mémoire vive (`/run/user/1000/secrets/`) et s'effacent complètement à l'extinction.
+* *Pour la documentation exhaustive et tous les cas de figure : voir `docs/INSTALLATION_ET_MAINTENANCE.md` et `docs/SECURITE_ET_ARCHITECTURE.md`.*
+
+## 9. Synchroniser
 
 ```bash
 chezmoi update                 # pull + apply

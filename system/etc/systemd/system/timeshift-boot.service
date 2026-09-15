@@ -1,0 +1,13 @@
+[Unit]
+Description=Sauvegarde automatique Timeshift au démarrage
+After=local-fs.target
+Documentation=man:timeshift(1)
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/bin/timeshift --create --scripted --tags B --comments "Démarrage automatique"
+
+[Install]
+WantedBy=multi-user.target

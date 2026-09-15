@@ -94,3 +94,14 @@ unset __conda_setup
 
 # Sécurité : purge les vars héritées de la session (supprimables après reconnexion)
 unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
+
+# Sécurité : protection des tokens via GNOME Keyring
+claude() {
+    command -v keyring-vault >/dev/null && keyring-vault unlock
+    command claude "$@"
+}
+
+agy() {
+    command -v keyring-vault >/dev/null && keyring-vault unlock
+    command agy "$@"
+}

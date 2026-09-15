@@ -25,9 +25,10 @@ PACMAN=(
   # menus, notifications, presse-papiers, captures, touches média (scripts JaKooLit)
   rofi yad libnotify wl-clipboard cliphist grim slurp swappy brightnessctl playerctl pamixer
   # polices, apps
-  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji nautilus firefox
-  # système (README §4) et outillage
+  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji nautilus firefox chromium discord
+  # système (README §4), sécurité et outillage
   zram-generator earlyoom power-profiles-daemon python-gobject git base-devel chezmoi
+  timeshift keepassxc opensnitch firejail
 )
 AUR=(
   # caelestia : le shell tourne depuis ~/.config/quickshell/caelestia (chezmoi), mais
