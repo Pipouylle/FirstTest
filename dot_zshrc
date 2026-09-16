@@ -46,7 +46,7 @@ alias l='ls -l'
 alias la='ls -a'
 alias lla='ls -la'
 alias lt='ls --tree'
-alias clb="claude —permission-mode bypassPermissions"
+alias clb="claude --dangerously-skip-permissions"
 alias archwin='ssh -t timot@desktop-d08n7j2 wsl.exe -d archlinux --cd ~'
 alias ssh="kitten ssh"
 alias yac="cd ~/Document/Cour yazi"
@@ -74,37 +74,15 @@ alias gem='STTY_SIZE=80x24 TERM=vt100 gemini gemini'
 # Added by Antigravity CLI installer
 export PATH="/home/timothe/.local/bin:$PATH"
 export PATH="/home/timothe/.local/bin:$PATH"
-alias clb='claude --permission-mode bypassPermissions'
 
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/timothe/anaconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "/home/timothe/anaconda3/etc/profile.d/conda.sh" ]; then
-        . "/home/timothe/anaconda3/etc/profile.d/conda.sh"
-    else
-        export PATH="/home/timothe/anaconda3/bin:$PATH"
-    fi
-fi
-unset __conda_setup
-# <<< conda initialize <<<
-
-
-# Sécurité : purge les vars héritées de la session (supprimables après reconnexion)
-unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN
-
-# Sécurité : protection des tokens via GNOME Keyring
-claude() {
-    command -v keyring-vault >/dev/null && keyring-vault unlock
-    command claude "$@"
-}
-
-agy() {
-    command -v keyring-vault >/dev/null && keyring-vault unlock
-    command agy "$@"
-}
+# agy et claude : tokens dans le groupe « Tokens CLI » de la base KeePassXC, mot de passe maître
+# demandé par appli, valable 10 min après sa dernière utilisation (voir ~/.local/bin/keepass-tokens).
+# Contourner : `command agy`, `command claude` (ex. `command claude setup-token`).
+agy() { keepass-tokens agy "$@"; }
+claude() { keepass-tokens claude "$@"; }
+# chromium : toujours le Chromium du compte dédié ; /usr/bin/chromium lancé en direct
+# ouvrirait un profil dans ~/.config/chromium, lisible par la session
+alias chromium=chromium-sbx
 
 export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/ssh-agent.socket"
 

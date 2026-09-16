@@ -4,6 +4,13 @@
 # Usage : bwrap-app <commande_ou_binaire> [arguments...]
 # Exemple : bwrap-app discord
 #           bwrap-app spotify
+# Même cloisonnement que bwrap-agent (Chromium, lui, tourne sous un compte dédié : voir system/chromium-sbx) :
+# - $HOME vide, sauf ~/.config/<app> (profil isolé) et ~/Downloads
+# - De $XDG_RUNTIME_DIR, seuls Wayland, PipeWire/Pulse et un bus D-Bus filtré
+#   (xdg-dbus-proxy) sont visibles : pas d'IPC Hyprland, de systemd --user ni
+#   d'agents SSH/GPG, qui permettraient de lancer des commandes hors du sandbox
+# - /tmp partagé entre les lancements d'une même appli (pas avec l'hôte), pour que
+#   les verrous « instance unique » (Electron, Chromium...) voient l'instance ouverte
 # ==============================================================================
 set -euo pipefail
 
@@ -26,6 +33,11 @@ chmod 700 "$APP_DATA_DIR"
 
 mkdir -p "$HOME/Downloads"
 
+RUNTIME_DIR="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR non défini}"
+STATE_DIR="$RUNTIME_DIR/bwrap-app/$APP_NAME"
+SANDBOX_TMP="$STATE_DIR/tmp"
+mkdir -p -m 700 "$RUNTIME_DIR/bwrap-app" "$STATE_DIR" "$SANDBOX_TMP"
+
 echo "🛡️  Lancement de [$APP_NAME] dans un Mount Namespace Bubblewrap..."
 echo "📁 Profil isolé : $APP_DATA_DIR"
 echo "🚫 Vos autres fichiers personnels (~/.ssh, ~/.claude, etc.) sont invisibles."
@@ -33,7 +45,41 @@ echo "🚫 Vos autres fichiers personnels (~/.ssh, ~/.claude, etc.) sont invisib
 # Résolution du chemin absolu du binaire
 BIN_PATH=$(command -v "$APP_CMD" || echo "$APP_CMD")
 
+WAYLAND_SOCKET="${WAYLAND_DISPLAY:-wayland-0}"
+[[ "$WAYLAND_SOCKET" == /* ]] || WAYLAND_SOCKET="$RUNTIME_DIR/$WAYLAND_SOCKET"
+
+# Noms D-Bus autorisés. MPRIS (touches média, lecteur de la barre) : nom de l'appli
+# et nom utilisé par les applis Electron.
+DBUS_POLICY=(
+    --talk=org.freedesktop.secrets
+    --talk='org.freedesktop.portal.*'
+    --talk=org.freedesktop.Notifications
+    --talk=org.freedesktop.ScreenSaver
+    --own='org.mpris.MediaPlayer2.chromium.*'
+)
+if [[ "$APP_NAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    DBUS_POLICY+=(--own="org.mpris.MediaPlayer2.$APP_NAME" --own="org.mpris.MediaPlayer2.$APP_NAME.*")
+fi
+
+# Bus de session filtré, un proxy par lancement. xdg-dbus-proxy écrit un octet sur
+# --fd quand il est prêt et s'arrête quand ce tube se ferme, c.-à-d. quand bwrap
+# (qui en garde l'autre bout via --sync-fd) se termine.
+for sock in "$STATE_DIR"/bus-*; do
+    if [[ -S "$sock" ]] && ! kill -0 "${sock##*-}" 2>/dev/null; then
+        rm -f "$sock"
+    fi
+done
+BUS_SOCKET="$STATE_DIR/bus-$$"
+exec {proxy_fd}< <(exec xdg-dbus-proxy \
+    "${DBUS_SESSION_BUS_ADDRESS:-unix:path=$RUNTIME_DIR/bus}" "$BUS_SOCKET" --fd=1 --filter "${DBUS_POLICY[@]}")
+if ! read -r -N 1 -u "$proxy_fd" _ready; then
+    echo "bwrap-app : xdg-dbus-proxy n'a pas démarré" >&2
+    exit 1
+fi
+
 exec bwrap \
+    --new-session \
+    --sync-fd "$proxy_fd" \
     --ro-bind /usr /usr \
     --ro-bind /lib /lib \
     --ro-bind /lib64 /lib64 \
@@ -42,9 +88,19 @@ exec bwrap \
     --ro-bind-try /opt /opt \
     --ro-bind-try /run/dbus /run/dbus \
     --dev /dev \
+    --dev-bind-try /dev/dri /dev/dri \
+    --ro-bind-try /sys/dev /sys/dev \
+    --ro-bind-try /sys/devices /sys/devices \
+    --ro-bind-try /sys/bus /sys/bus \
+    --ro-bind-try /sys/class /sys/class \
     --proc /proc \
-    --tmpfs /tmp \
-    --bind "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR" \
+    --bind "$SANDBOX_TMP" /tmp \
+    --perms 0700 --dir "$RUNTIME_DIR" \
+    --ro-bind "$WAYLAND_SOCKET" "$WAYLAND_SOCKET" \
+    --ro-bind-try "$RUNTIME_DIR/pipewire-0" "$RUNTIME_DIR/pipewire-0" \
+    --ro-bind-try "$RUNTIME_DIR/pulse/native" "$RUNTIME_DIR/pulse/native" \
+    --ro-bind "$BUS_SOCKET" "$RUNTIME_DIR/bus" \
+    --setenv DBUS_SESSION_BUS_ADDRESS "unix:path=$RUNTIME_DIR/bus" \
     --tmpfs "$HOME" \
     --bind "$APP_DATA_DIR" "$HOME/.config/$APP_NAME" \
     --bind "$HOME/Downloads" "$HOME/Downloads" \

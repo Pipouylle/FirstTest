@@ -1,0 +1,4 @@
+# produits par build.sh
+wayland-sandbox-socket
+security-context-v1-client-protocol.h
+security-context-v1-protocol.c

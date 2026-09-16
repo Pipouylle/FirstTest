@@ -3,9 +3,12 @@
 -- déjà son OSD, les scripts JaKooLit faisaient doublon (notification + OSD).
 local g = hl.dsp.global
 
--- Redémarrer le shell. `qs kill` passe par le registre d'instances de quickshell ;
--- un `pkill -f quickshell` se tuait lui-même (le mot est dans la ligne de commande du bind).
-hl.bind("CTRL + SUPER + SHIFT + R", hl.dsp.exec_cmd("qs kill -c caelestia; sleep 0.3; qs -c caelestia -d"))
+-- Redémarrer le shell. `qs kill` passe par l'IPC de l'instance ; si elle ne répond pas
+-- (cas probable pendant le chargement de la config, ~27 s au boot le 15/09/2026, où deux
+-- instances ont tourné), `pkill -x qs` sert de repli (-x compare le nom du processus, pas la
+-- ligne de commande, donc le bind ne se tue pas lui-même comme `pkill -f quickshell`).
+-- `-n` refuse de lancer un doublon.
+hl.bind("CTRL + SUPER + SHIFT + R", hl.dsp.exec_cmd("qs kill -c caelestia; sleep 0.5; pkill -x qs; sleep 0.5; qs -c caelestia -n -d"))
 
 hl.bind("SUPER + tab",         g("caelestia:overview"))
 hl.bind("SUPER + SHIFT + tab", g("caelestia:sidebar"))

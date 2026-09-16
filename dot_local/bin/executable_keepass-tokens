@@ -1,0 +1,426 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# keepass-tokens : tokens des CLI (agy, Claude Code) rangés dans le groupe « Tokens CLI »
+# de la base KeePassXC principale, lus par keepassxc-cli. Chaque appli se déverrouille
+# séparément avec le mot de passe maître (et le fichier clé), puis reste déverrouillée
+# jusqu'à UNLOCK_SECONDS après sa dernière utilisation. Ce groupe n'est pas celui exposé
+# au Secret Service : aucune autre application ne peut demander ces tokens par D-Bus,
+# même quand KeePassXC est ouvert et déverrouillé.
+#
+#   keepass-tokens agy [args]      lance agy (fonction agy du .zshrc)
+#   keepass-tokens claude [args]   lance claude (fonction claude du .zshrc)
+#   keepass-tokens set-claude      enregistre le token donné par « claude setup-token »
+#   keepass-tokens lock            reverrouille tout de suite les applis qui ne tournent pas
+#   keepass-tokens purge <appli>   appelé par le minuteur systemd à l'expiration
+#
+# Saisie : fenêtre PINENTRY dans une session graphique, sinon dans le terminal.
+# Pendant la période de déverrouillage, le token de l'appli est en clair dans
+# $XDG_RUNTIME_DIR/secrets/<appli>/ (RAM, 0600) : lisible par les programmes de ton
+# compte, comme l'était l'ancien fichier. Sur disque, il n'existe que chiffré dans la base.
+# agy : pendant qu'il tourne, le chemin de son token est un lien vers la copie en RAM.
+# S'il obtient un nouveau jeton de rafraîchissement, le mot de passe est redemandé à
+# la sortie pour l'enregistrer ; en cas d'échec le token reste en RAM, marqué « à
+# enregistrer » (jamais effacé par le minuteur), et l'enregistrement est retenté au
+# lancement suivant.
+# Les écritures (1er enregistrement, nouveau jeton de rafraîchissement, set-claude)
+# modifient le fichier de la base : KeePassXC le recharge, et propose de fusionner s'il
+# a des modifications non enregistrées.
+# ==============================================================================
+set -uo pipefail
+umask 077
+
+DB="$HOME/Mots de passe.kdbx"
+KEY_FILE="$HOME/Documents/KeePass"   # vide si la base n'a pas de fichier clé
+GROUP="Tokens CLI"                   # surtout pas le groupe exposé au Secret Service
+ACCOUNTS_GROUP="Comptes sandbox"     # mots de passe des comptes dédiés (chromium...)
+UNLOCK_SECONDS=600
+PINENTRY=pinentry-gtk                # fenêtre de saisie ; vide = toujours dans le terminal
+PINENTRY_TIMEOUT=120                 # une fenêtre oubliée se ferme d'elle-même (= annulation)
+
+AGY_BIN="$HOME/.local/bin/agy"
+AGY_TOKEN="$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
+CLAUDE_BIN="$HOME/.local/bin/claude"
+SANDBOX="$HOME/.local/bin/bwrap-agent"   # sandbox des agents ; vide = lancés sans sandbox
+
+SECRETS_DIR="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR non défini}/secrets"
+SELF=$(readlink -f "$0")
+
+say() { echo "keepass-tokens : $*" >&2; }
+
+# kp <commande keepassxc-cli> [args] : envoie $PW (puis $KP_INPUT s'il est défini) sur
+# l'entrée de keepassxc-cli ; messages d'erreur (en anglais, pour les reconnaître) dans $KP_ERR.
+kp() {
+    local cmd=$1; shift
+    local key=()
+    [[ -n $KEY_FILE ]] && key=(-k "$KEY_FILE")
+    local err; err=$(mktemp -p "$SECRETS_DIR")
+    { printf '%s\n' "$PW"; if [[ -n ${KP_INPUT-} ]]; then printf '%s\n' "$KP_INPUT"; fi; } \
+        | LC_ALL=C.UTF-8 LANGUAGE= keepassxc-cli "$cmd" "${key[@]}" "$@" 2>"$err"
+    local rc=${PIPESTATUS[1]}
+    KP_ERR=$(grep -viE 'enter password|repeat password' "$err"); rm -f "$err"
+    return "$rc"
+}
+
+assuan_escape() {  # protocole pinentry : %, CR et LF sont encodés
+    local s=${1//%/%25}
+    s=${s//$'\n'/%0A}
+    printf '%s' "${s//$'\r'/%0D}"
+}
+
+# ask_secret <titre> <description> <invite> [erreur] : lit un secret dans $SECRET.
+# Échoue si la saisie est annulée, expire ou si ni fenêtre ni terminal ne sont disponibles.
+ask_secret() {
+    local title=$1 desc=$2 prompt=$3 error=${4:-}
+    SECRET=""
+    if [[ -n $PINENTRY && -n ${WAYLAND_DISPLAY:-${DISPLAY:-}} ]] && command -v "$PINENTRY" >/dev/null; then
+        local cmds=(
+            "SETTIMEOUT $PINENTRY_TIMEOUT"
+            "SETTITLE $(assuan_escape "$title")"
+            "SETDESC $(assuan_escape "$desc")"
+            "SETPROMPT $(assuan_escape "$prompt")"
+            "SETOK Valider"
+            "SETCANCEL Annuler"
+        )
+        [[ -n $error ]] && cmds+=("SETERROR $(assuan_escape "$error")")
+        cmds+=(GETPIN BYE)
+        # pinentry-gtk ignore SETTIMEOUT : timeout ferme de toute façon une fenêtre oubliée
+        local out; out=$(printf '%s\n' "${cmds[@]}" | timeout "$PINENTRY_TIMEOUT" "$PINENTRY" 2>/dev/null; echo "rc=${PIPESTATUS[1]}")
+        [[ $out == *$'\n'rc=0 ]] || return 1   # délai dépassé ou pinentry en échec
+        # Réponse à GETPIN : « D <secret encodé> » puis « OK », ou « ERR … » (annulé)
+        [[ $out == *$'\nERR '* && $out != *$'\nD '* ]] && return 1
+        if [[ $out == *$'\nD '* ]]; then
+            local data=${out#*$'\nD '}
+            data=${data%%$'\n'*}
+            data=${data//\\/\\\\}                 # garder les « \ » littéraux pour %b
+            printf -v SECRET '%b' "${data//%/\\x}"  # %XX -> octet
+        fi
+        return 0
+    fi
+    [[ -n $error ]] && echo "keepass-tokens : $error" >/dev/tty
+    IFS= read -rs -p "🔑 $desc : " SECRET </dev/tty 2>/dev/tty || return 1
+    echo >/dev/tty
+}
+
+# unlock <appli> <commande keepassxc-cli> [args] : demande le mot de passe (3 essais)
+unlock() {
+    local app=$1 try error=""; shift
+    KP_ERR=""
+    for try in 1 2 3; do
+        local desc="Mot de passe maître KeePassXC pour déverrouiller les tokens de « $app » (valable $((UNLOCK_SECONDS / 60)) min après sa dernière utilisation)"
+        if [[ $app == "compte "* ]]; then
+            desc="Mot de passe maître KeePassXC pour utiliser le $app (demandé à chaque fois)"
+        fi
+        if ! ask_secret "KeePassXC — $app" "$desc" "Mot de passe :" "$error" 2>/dev/null; then
+            unset SECRET
+            KP_ERR="saisie annulée (fenêtre fermée, délai dépassé ou terminal indisponible)"
+            return 1
+        fi
+        PW=$SECRET; unset SECRET
+        kp "$@" && return 0
+        [[ $KP_ERR == *"Invalid credentials"* ]] || return 1
+        error="Mot de passe incorrect (essai $((try + 1))/3)"
+        say "mot de passe incorrect"
+    done
+    return 1
+}
+
+others_running() {  # others_running <appli> : une autre instance lancée par ce script tourne-t-elle ?
+    local f
+    for f in "$SECRETS_DIR/$1/pids"/*; do
+        [[ -e $f && ${f##*/} != "$$" ]] || continue
+        if kill -0 "${f##*/}" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "$f"   # instance arrêtée brutalement
+    done
+    return 1
+}
+
+unlocked() {  # unlocked <appli> : token en cache et période de déverrouillage en cours
+    local d="$SECRETS_DIR/$1"
+    [[ -s $d/token ]] || return 1
+    others_running "$1" && return 0
+    [[ -s $d/expires ]] && (( $(date +%s) < $(<"$d/expires") ))
+}
+
+# Le minuteur appelle « purge », qui ne fait rien si la période a été prolongée entre-temps :
+# chaque sortie programme donc simplement un nouveau minuteur, sans annuler les anciens.
+schedule_lock() {  # schedule_lock <appli>
+    echo $(( $(date +%s) + UNLOCK_SECONDS )) > "$SECRETS_DIR/$1/expires"
+    systemd-run --user --quiet --collect --on-active="$UNLOCK_SECONDS" --timer-property=AccuracySec=1s \
+        --unit="keepass-tokens-lock-$1-$(date +%s%N)" "$SELF" purge "$1" >/dev/null 2>&1 \
+        || say "minuteur systemd indisponible : le token de $1 sera effacé au prochain lancement après expiration"
+}
+
+purge() {  # purge <appli> : efface le cache si la période est finie et que l'appli ne tourne plus
+    local app=$1 d="$SECRETS_DIR/$1"
+    [[ -d $d ]] || return 0
+    exec 8>"$d/lock"
+    flock 8
+    if others_running "$app" || { [[ -s $d/expires ]] && (( $(date +%s) < $(<"$d/expires") )); }; then
+        flock -u 8; return 0
+    fi
+    if [[ -e $d/pending ]]; then
+        flock -u 8; return 0   # token agy pas encore enregistré dans la base : on le garde
+    fi
+    rm -f "$d/token" "$d/expires" "$d/refresh.sha256"
+    flock -u 8
+}
+
+# ---------------------------------------------------------------- agy -------
+
+refresh_digest() {  # empreinte du jeton de rafraîchissement (du fichier entier si format inattendu)
+    local r; r=$(jq -r '.token.refresh_token // empty' "$1" 2>/dev/null)
+    if [[ -n $r ]]; then printf '%s' "$r" | sha256sum; else sha256sum < "$1"; fi | cut -d' ' -f1
+}
+
+agy_save() {  # agy_save <fichier> : enregistre le token agy dans la base (demande le mot de passe)
+    if unlock agy attachment-import -f "$DB" "$GROUP/agy" antigravity-oauth-token "$1" >/dev/null; then
+        unset PW; return 0
+    fi
+    if [[ $KP_ERR == *"Could not find entry"* ]]; then
+        kp mkdir "$DB" "$GROUP" >/dev/null   # 1re utilisation ; échoue sans conséquence si le groupe existe
+        if kp add "$DB" "$GROUP/agy" >/dev/null \
+            && kp attachment-import -f "$DB" "$GROUP/agy" antigravity-oauth-token "$1" >/dev/null; then
+            unset PW; return 0
+        fi
+    fi
+    unset PW
+    say "échec de l'enregistrement dans la base${KP_ERR:+ : $KP_ERR}"
+    return 1
+}
+
+agy_start() {
+    local d="$SECRETS_DIR/agy"
+    if [[ -f $AGY_TOKEN && ! -L $AGY_TOKEN ]]; then
+        # token en clair sur le disque (1re connexion hors script, arrêt brutal...)
+        say "token agy en clair trouvé sur le disque : enregistrement dans la base"
+        agy_save "$AGY_TOKEN" || return 1
+        mv -f "$AGY_TOKEN" "$d/token"
+        rm -f "$d/pending"
+        refresh_digest "$d/token" > "$d/refresh.sha256"
+    elif [[ -e $d/pending && -s $d/token ]] && ! others_running agy; then
+        say "token agy renouvelé lors d'une session précédente : enregistrement dans la base"
+        agy_save "$d/token" || return 1
+        rm -f "$d/pending"
+        refresh_digest "$d/token" > "$d/refresh.sha256"
+    elif ! unlocked agy; then
+        if ! unlock agy attachment-export --stdout "$DB" "$GROUP/agy" antigravity-oauth-token > "$d/token.tmp"; then
+            unset PW; rm -f "$d/token.tmp"
+            if [[ $KP_ERR == *"Could not find"* ]]; then
+                say "aucun token agy dans la base : agy va demander une connexion, le token sera enregistré à la sortie"
+                return 0
+            fi
+            say "accès refusé${KP_ERR:+ : $KP_ERR}"
+            return 1
+        fi
+        unset PW
+        mv -f "$d/token.tmp" "$d/token"
+        refresh_digest "$d/token" > "$d/refresh.sha256"
+    fi
+    mkdir -p "$(dirname "$AGY_TOKEN")"
+    ln -sfn "$d/token" "$AGY_TOKEN"
+}
+
+agy_finish() {
+    local d="$SECRETS_DIR/agy"
+    rm -f "$d/pids/$$"
+    others_running agy && return 0
+    # agy a écrit un vrai fichier (connexion, remplacement du lien) : le ramener en RAM
+    if [[ -f $AGY_TOKEN && ! -L $AGY_TOKEN ]]; then
+        mv -f "$AGY_TOKEN" "$d/token"
+    fi
+    rm -f "$AGY_TOKEN"   # le lien n'existe que pendant l'exécution
+    [[ -s $d/token ]] || return 0
+    if [[ ! -s $d/refresh.sha256 || "$(refresh_digest "$d/token")" != "$(<"$d/refresh.sha256")" ]]; then
+        say "agy a un nouveau jeton de rafraîchissement : enregistrement dans la base"
+        if agy_save "$d/token"; then
+            refresh_digest "$d/token" > "$d/refresh.sha256"
+            rm -f "$d/pending"
+        else
+            touch "$d/pending"
+            say "token gardé en RAM (perdu au redémarrage) : il sera enregistré au prochain lancement d'agy"
+        fi
+    fi
+    schedule_lock agy
+}
+
+# ------------------------------------------------------------- claude -------
+
+claude_start() {
+    local d="$SECRETS_DIR/claude"
+    unlocked claude && return 0
+    if ! unlock claude show -s -a Password "$DB" "$GROUP/claude" > "$d/token.tmp"; then
+        unset PW; rm -f "$d/token.tmp"
+        if [[ $KP_ERR == *"Could not find entry"* ]]; then
+            say "aucun token Claude dans la base : lance « command claude setup-token », puis « keepass-tokens set-claude »"
+        else
+            say "accès refusé${KP_ERR:+ : $KP_ERR}"
+        fi
+        return 1
+    fi
+    unset PW
+    mv -f "$d/token.tmp" "$d/token"
+}
+
+claude_finish() {
+    rm -f "$SECRETS_DIR/claude/pids/$$"
+    others_running claude && return 0
+    [[ -s $SECRETS_DIR/claude/token ]] && schedule_lock claude
+}
+
+set_claude() {
+    local token saved=0
+    if ! ask_secret "KeePassXC — token Claude" "Colle le token affiché par « claude setup-token »" "Token :" 2>/dev/null; then
+        unset SECRET
+        say "saisie annulée"
+        exit 1
+    fi
+    token=$SECRET; unset SECRET
+    if [[ $token != sk-ant-* ]]; then
+        say "ce n'est pas un token Claude (il commence par sk-ant-)"
+        exit 1
+    fi
+    KP_INPUT=$token
+    if unlock claude add -p "$DB" "$GROUP/claude" >/dev/null; then
+        saved=1
+    elif [[ $KP_ERR != *"Invalid credentials"* && -n ${PW-} ]]; then
+        # groupe absent (1re utilisation) ou entrée déjà présente (remplacement du token)
+        kp mkdir "$DB" "$GROUP" >/dev/null
+        if kp add -p "$DB" "$GROUP/claude" >/dev/null || kp edit -p "$DB" "$GROUP/claude" >/dev/null; then
+            saved=1
+        fi
+    fi
+    unset PW KP_INPUT token
+    if (( ! saved )); then
+        say "échec de l'enregistrement${KP_ERR:+ : $KP_ERR}"
+        exit 1
+    fi
+    rm -f "$SECRETS_DIR/claude/token" "$SECRETS_DIR/claude/expires"   # ancien token en cache
+    say "token Claude enregistré dans « $GROUP/claude »"
+}
+
+# ------------------------------------------------------------- commun -------
+
+run() {  # run <appli> <binaire> [args]
+    local app=$1 bin=$2; shift 2
+    local d="$SECRETS_DIR/$app"
+    mkdir -p "$d/pids"
+    exec 9>"$d/lock"
+    flock 9
+    if ! "${app}_start"; then
+        exit 1
+    fi
+    touch "$d/pids/$$"
+    flock -u 9
+
+    # Ctrl+C sert à l'appli : le script ne doit pas sortir avant elle. HUP/TERM
+    # (terminal fermé, extinction) : sortie après l'appli, par le trap EXIT.
+    trap ':' INT
+    trap 'exit 129' HUP
+    trap 'exit 143' TERM
+    trap "flock 9; ${app}_finish; flock -u 9" EXIT
+
+    # Sandbox de l'agent (voir bwrap-agent) : il ne voit ni l'autre agent ni les secrets.
+    # agy : son token en RAM est le seul fichier de $XDG_RUNTIME_DIR qui lui est montré.
+    local sandbox=()
+    if [[ -n $SANDBOX ]]; then
+        sandbox=("$SANDBOX" "$app")
+        if [[ $app == agy && -s $d/token ]]; then
+            sandbox+=(--expose "$d/token")
+        fi
+        sandbox+=(--)
+    fi
+    if [[ $app == claude ]]; then
+        CLAUDE_CODE_OAUTH_TOKEN=$(<"$d/token") "${sandbox[@]}" "$bin" "$@" 9>&-
+    else
+        "${sandbox[@]}" "$bin" "$@" 9>&-
+    fi
+}
+
+# ------------------------------------------------------- comptes dédiés -------
+
+# set_account <compte> : nouveau mot de passe aléatoire pour un compte dédié (chromium...),
+# rangé dans KeePassXC, puis appliqué au compte par chpasswd (avec ton mot de passe sudo).
+set_account() {
+    local account=$1 pw saved=0
+    if ! id "$account" &>/dev/null; then
+        say "compte inconnu : $account"
+        exit 1
+    fi
+    pw=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)
+    KP_INPUT=$pw
+    if unlock "compte $account" add -p "$DB" "$ACCOUNTS_GROUP/$account" >/dev/null; then
+        saved=1
+    elif [[ $KP_ERR != *"Invalid credentials"* && -n ${PW-} ]]; then
+        kp mkdir "$DB" "$ACCOUNTS_GROUP" >/dev/null   # groupe absent (1re fois) ou entrée déjà présente
+        if kp add -p "$DB" "$ACCOUNTS_GROUP/$account" >/dev/null || kp edit -p "$DB" "$ACCOUNTS_GROUP/$account" >/dev/null; then
+            saved=1
+        fi
+    fi
+    unset PW KP_INPUT
+    if (( ! saved )); then
+        unset pw
+        say "échec de l'enregistrement${KP_ERR:+ : $KP_ERR}"
+        exit 1
+    fi
+    say "mot de passe rangé dans « $ACCOUNTS_GROUP/$account », application au compte (mot de passe sudo) :"
+    if ! printf '%s:%s\n' "$account" "$pw" | sudo chpasswd; then
+        unset pw
+        say "chpasswd a échoué : le mot de passe du compte n'a pas changé, relance la commande"
+        exit 1
+    fi
+    unset pw
+    say "compte $account : mot de passe changé"
+}
+
+# Mode askpass : « keepass-tokens sudo » fait appeler ce script par sudo -A pour obtenir
+# le mot de passe du compte cible, lu dans KeePassXC à chaque fois (jamais mémorisé).
+if [[ -n ${KEEPASS_TOKENS_ASKPASS-} ]]; then
+    account=$KEEPASS_TOKENS_ASKPASS
+    mkdir -p "$SECRETS_DIR"
+    if unlock "compte $account" show -s -a Password "$DB" "$ACCOUNTS_GROUP/$account"; then
+        unset PW
+        exit 0
+    fi
+    unset PW
+    say "mot de passe du compte $account non obtenu${KP_ERR:+ : $KP_ERR}"
+    exit 1
+fi
+
+mkdir -p "$SECRETS_DIR"
+case "${1:-}" in
+    agy|claude|set-claude|set-account|sudo)
+        [[ -f $DB ]] || { say "base introuvable : $DB"; exit 1; }
+        [[ -z $KEY_FILE || -r $KEY_FILE ]] || { say "fichier clé illisible : $KEY_FILE"; exit 1; }
+        case $1 in
+            agy)         shift; run agy "$AGY_BIN" "$@" ;;
+            claude)      shift; run claude "$CLAUDE_BIN" "$@" ;;
+            set-claude)  set_claude ;;
+            set-account) set_account "${2:?compte manquant (ex. chromium)}" ;;
+            sudo)
+                account=${2:?compte manquant (ex. chromium)}
+                shift 2
+                if [[ $# -eq 0 ]]; then
+                    say "commande manquante : keepass-tokens sudo $account <commande>"
+                    exit 1
+                fi
+                KEEPASS_TOKENS_ASKPASS=$account SUDO_ASKPASS=$SELF exec sudo -A -u "$account" -- "$@" ;;
+        esac ;;
+    lock)
+        for app in agy claude; do
+            [[ -d $SECRETS_DIR/$app ]] || continue
+            if others_running "$app"; then
+                say "$app tourne encore : il sera reverrouillé $UNLOCK_SECONDS s après sa sortie"
+                continue
+            fi
+            echo 0 > "$SECRETS_DIR/$app/expires"
+            purge "$app"
+            [[ -e $SECRETS_DIR/$app/pending ]] && say "token agy pas encore enregistré : gardé en RAM"
+        done ;;
+    purge)
+        purge "${2:?appli manquante}" ;;
+    *)
+        echo "Usage : keepass-tokens {agy|claude|set-claude|set-account <compte>|sudo <compte> <commande>|lock} [arguments]" >&2
+        exit 1 ;;
+esac

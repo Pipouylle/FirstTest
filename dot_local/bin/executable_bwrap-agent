@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# bwrap-agent : lance un agent CLI (agy, claude) dans un sandbox Bubblewrap qui garde
+# l'accès au reste du PC mais cache les secrets et ferme les portes de sortie.
+#   bwrap-agent <agy|claude> [--expose <fichier de $XDG_RUNTIME_DIR>]... -- <commande> [args]
+# Appelé par keepass-tokens ; --expose rend visible (en écriture) un fichier précis de
+# $XDG_RUNTIME_DIR, comme le token agy en RAM, alors que tout le reste en est masqué.
+#
+# Bubblewrap est à sens unique : l'agent ne peut ni lire ce qui est masqué ni passer par
+# les sockets fermés, mais les programmes lancés HORS sandbox sous ton compte voient
+# toujours l'intérieur (/proc/<pid>/root, /proc/<pid>/environ).
+#
+# - Système de fichiers de l'hôte monté en entier, puis :
+#   - lecture seule : ce qui s'exécute plus tard hors sandbox (shell, ~/.config dont
+#     Hyprland et systemd, ~/.local/bin, lanceurs, chezmoi, oh-my-zsh, git, claude),
+#     pour que l'agent ne puisse pas se ménager une porte de sortie
+#   - masqués : SSH, GPG, fichier clé KeePassXC, config KeePassXC (clé KeeShare),
+#     profils de navigateurs et de messageries, config de l'autre agent
+# - $XDG_RUNTIME_DIR vide : ni IPC Hyprland, ni systemd --user, ni agents SSH/GPG,
+#   ni Wayland/PipeWire, ni caches de tokens ; seulement un bus D-Bus filtré
+#   (notifications, portails) et les fichiers --expose
+# - bus D-Bus système masqué (NetworkManager, polkit, login1…)
+# - /tmp privé : ni sockets X11, ni socket KeePassXC, ni interface OpenSnitch
+# - /dev et /dev/pts neufs : pas d'accès aux autres terminaux. Le terminal de l'agent
+#   reste son terminal de contrôle (pas de --new-session : l'injection de frappes TIOCSTI
+#   est désactivée par le noyau, dev.tty.legacy_tiocsti=0)
+# - espace de PID séparé : ne voit ni ne signale les processus de l'hôte ; ses propres
+#   processus (serveurs de dev…) s'arrêtent avec lui
+# - réseau inchangé ; sudo ne marche pas (no_new_privs) ; mises à jour d'agy/claude hors sandbox
+# ==============================================================================
+set -euo pipefail
+
+usage() {
+    echo "Usage : bwrap-agent <agy|claude> [--expose <fichier de \$XDG_RUNTIME_DIR>]... -- <commande> [arguments]" >&2
+    exit 2
+}
+
+APP=${1:-}
+case $APP in agy|claude) shift ;; *) usage ;; esac
+EXPOSE=()
+while [[ $# -gt 0 && $1 != -- ]]; do
+    [[ $1 == --expose && $# -ge 2 ]] || usage
+    EXPOSE+=("$2")
+    shift 2
+done
+[[ ${1:-} == -- && $# -ge 2 ]] || usage
+shift
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR non défini}"
+STATE_DIR="$RUNTIME_DIR/bwrap-agent"
+
+READONLY=(
+    "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.zshenv" "$HOME/.zlogin" "$HOME/.zlogout"
+    "$HOME/.profile" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login"
+    "$HOME/.oh-my-zsh" "$HOME/.gitconfig" "$HOME/.config"
+    "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/.local/share/chezmoi"
+    "$HOME/.local/share/claude"
+)
+# Appliqués après la lecture seule, pour pouvoir masquer des sous-dossiers de ~/.config
+HIDDEN=(
+    "$HOME/.ssh" "$HOME/.gnupg" "$HOME/Documents/KeePass"
+    "$HOME/.local/share/secure-profiles"
+    "$HOME/.config/keepassxc" "$HOME/.config/chromium" "$HOME/.config/mozilla"
+    "$HOME/.config/discord" "$HOME/.config/vesktop" "$HOME/.config/equibop" "$HOME/.config/legcord"
+    "$HOME/.config/Vencord" "$HOME/.config/Equicord" "$HOME/.config/BetterDiscord"
+    "$HOME/.config/spotify"
+)
+case $APP in   # config et identifiants de l'autre agent
+    agy)    HIDDEN+=("$HOME/.claude" "$HOME/.claude.json") ;;
+    claude) HIDDEN+=("$HOME/.gemini") ;;
+esac
+
+args=(
+    --die-with-parent
+    --dev-bind / /
+    --dev /dev
+    --unshare-pid --proc /proc
+    --tmpfs /tmp
+    --perms 0700 --tmpfs "$RUNTIME_DIR"
+)
+if [[ -S /run/dbus/system_bus_socket ]]; then
+    args+=(--ro-bind /dev/null /run/dbus/system_bus_socket)
+fi
+for p in "${READONLY[@]}"; do
+    if [[ -e $p ]]; then
+        args+=(--ro-bind "$p" "$p")
+    fi
+done
+for p in "${HIDDEN[@]}"; do
+    if [[ -d $p ]]; then
+        args+=(--tmpfs "$p")
+    elif [[ -e $p ]]; then
+        args+=(--ro-bind /dev/null "$p")
+    fi
+done
+for f in "${EXPOSE[@]}"; do
+    if [[ $f != "$RUNTIME_DIR"/* || ! -f $f ]]; then
+        echo "bwrap-agent : --expose attend un fichier existant de $RUNTIME_DIR : $f" >&2
+        exit 2
+    fi
+    args+=(--bind "$f" "$f")
+done
+
+# Bus de session filtré, un proxy par lancement. xdg-dbus-proxy écrit un octet sur
+# --fd quand il est prêt et s'arrête quand ce tube se ferme, c.-à-d. quand bwrap
+# (qui en garde l'autre bout via --sync-fd) se termine.
+mkdir -p -m 700 "$STATE_DIR"
+for sock in "$STATE_DIR"/bus-*; do
+    if [[ -S $sock ]] && ! kill -0 "${sock##*-}" 2>/dev/null; then
+        rm -f "$sock"
+    fi
+done
+BUS_SOCKET="$STATE_DIR/bus-$$"
+exec {proxy_fd}< <(exec xdg-dbus-proxy \
+    "${DBUS_SESSION_BUS_ADDRESS:-unix:path=$RUNTIME_DIR/bus}" "$BUS_SOCKET" --fd=1 --filter \
+    --talk=org.freedesktop.Notifications \
+    --talk='org.freedesktop.portal.*')
+if ! read -r -N 1 -u "$proxy_fd" _ready; then
+    echo "bwrap-agent : xdg-dbus-proxy n'a pas démarré" >&2
+    exit 1
+fi
+args+=(
+    --sync-fd "$proxy_fd"
+    --ro-bind "$BUS_SOCKET" "$RUNTIME_DIR/bus"
+    --setenv DBUS_SESSION_BUS_ADDRESS "unix:path=$RUNTIME_DIR/bus"
+    --unsetenv WAYLAND_DISPLAY --unsetenv DISPLAY --unsetenv HYPRLAND_INSTANCE_SIGNATURE
+    --unsetenv SSH_AUTH_SOCK --unsetenv GPG_AGENT_INFO --unsetenv KITTY_LISTEN_ON
+)
+
+exec bwrap "${args[@]}" "$@"

@@ -2,8 +2,8 @@
 Version=1.0
 Name=Chromium (Sécurisé)
 GenericName=Navigateur Web
-Comment=Navigateur Web Chromium isolé dans un Mount Namespace Bubblewrap
-Exec=/home/timothe/.local/bin/bwrap-chromium %U
+Comment=Chromium sous le compte dédié « chromium » (profil illisible par la session)
+Exec=/home/timothe/.local/bin/chromium-sbx %U
 Terminal=false
 X-MultipleArgs=false
 Type=Application

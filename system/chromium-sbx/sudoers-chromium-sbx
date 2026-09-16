@@ -1,0 +1,10 @@
+# /etc/sudoers.d/chromium-sbx : compte dédié « chromium » (voir /usr/local/bin/chromium-sbx-inner)
+#
+# Lancer Chromium : sans mot de passe, uniquement ce lanceur (appartient à root, refuse
+# toute option). Toute autre commande en tant que chromium exige le mot de passe DU
+# COMPTE chromium (rangé dans KeePassXC, fourni par « keepass-tokens sudo chromium »),
+# jamais mémorisé. Sudoers applique la dernière règle correspondante : la règle
+# NOPASSWD doit rester après la règle générale.
+Defaults>chromium targetpw, timestamp_timeout=0
+timothe ALL=(chromium) ALL
+timothe ALL=(chromium) NOPASSWD: /usr/local/bin/chromium-sbx-inner

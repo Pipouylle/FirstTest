@@ -1,0 +1,10 @@
+[Unit]
+Description=Socket Wayland sandboxé pour Chromium (compte chromium)
+Documentation=file:///usr/local/bin/chromium-sbx-inner
+
+[Service]
+# Contexte de sécurité Hyprland : les clients de ce socket n'ont ni capture d'écran,
+# ni clavier virtuel, ni presse-papiers global. Nécessite WAYLAND_DISPLAY dans
+# l'environnement systemd (importé par lua/autostart.lua).
+ExecStart=/usr/local/bin/wayland-sandbox-socket /run/chromium-sbx/wayland chromium chromium-sbx
+Restart=on-failure

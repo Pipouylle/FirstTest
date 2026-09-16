@@ -14,13 +14,16 @@ Contenu géré :
 | `~/.config/yazi/` | gestionnaire de fichiers : ouvreurs Zed/micro, zip/unzip, aperçus glow/jq/yq, et **bac à sable Firejail (touche `O`)** |
 | `~/.config/zed/` | keymap (aperçu Markdown `ctrl-alt-v`), settings, thème caelestia |
 | `~/.config/kitty/` | terminal + thèmes |
-| `~/.config/chromium-flags.conf` | flags Chromium : force le chiffrement via Secret Service (`--password-store=gnome-libsecret`) |
 | `~/.config/easyeffects/`, `waypaper/`, `fastfetch/`, `vicinae/` | audio, fonds d'écran, fetch, lanceur |
-| `~/.local/bin/keyring-vault` | coffre-fort éphémère en RAM pour les tokens API (Claude, Antigravity) via KeePassXC/Keyring |
-| `~/.zshrc`, `~/.zprofile`, `~/.condarc` | shell (oh-my-zsh), wrappers de sécurité pour `claude` et `agy`, conda **sans** activation auto de `base` |
+| `~/.local/bin/bwrap-app` | sandbox Bubblewrap durci pour une appli quelconque : `$HOME` vide, bus D-Bus filtré (`xdg-dbus-proxy`), seuls Wayland/PipeWire/Pulse montés, `/tmp` partagé entre lancements, GPU |
+| `~/.local/share/applications/chromium.desktop`, `~/.local/bin/chromium-sbx`, `~/.local/bin/dbus-uid-relay`, `~/.config/systemd/user/chromium-sbx-{wayland,dbus,dbus-relay}.service`, `~/.config/pipewire/pipewire-pulse.conf.d/chromium-sbx.conf` | partie session de **Chromium sous le compte dédié `chromium`** : le raccourci lance `chromium-sbx`, qui démarre les sockets de passage dans `/run/chromium-sbx` (Wayland en contexte de sécurité Hyprland, bus D-Bus filtré + relais d'authentification, son PipeWire restreint) puis le lanceur interne root via sudo. Le profil (`/var/lib/chromium-sbx`) est illisible par la session |
+| `~/.local/bin/keepass-tokens` | tokens d'`agy` et de `claude` dans le groupe « Tokens CLI » de la base KeePassXC principale (groupe non exposé au Secret Service) : mot de passe maître demandé par application dans une fenêtre `pinentry-gtk` (flottante via `lua/rules.lua`), valable 10 min après sa dernière utilisation. Sous-commandes `set-claude` et `lock`, et pour les comptes dédiés (`system/chromium-sbx`) `set-account <compte>` et `sudo <compte> <commande>`, avec le mot de passe du compte lu dans KeePassXC à chaque fois |
+| `~/.local/bin/bwrap-agent` | sandbox Bubblewrap d'`agy` et de `claude`, lancé par `keepass-tokens`. Il garde l'accès au reste du PC, mais aucun agent ne voit le token, la config ou les processus de l'autre. Secrets masqués (SSH, GPG, fichier clé et config KeePassXC, profils de navigateurs et de messageries), fichiers de démarrage en lecture seule, ni IPC Hyprland, ni systemd, ni bus système, `/tmp` privé |
+| `~/.zshrc`, `~/.zprofile`, `~/.condarc` | shell (oh-my-zsh), fonctions `agy` et `claude` (passent par `keepass-tokens` ; `command claude` les contourne), alias `chromium` → `chromium-sbx`, conda **sans** activation auto de `base` |
 | `~/.local/bin/linux-wallpaperengine` | lanceur Wallpaper Engine |
 | `install.sh` (racine, non déployé) | installation complète : paquets (dont Timeshift, KeePassXC, OpenSnitch, Firejail), oh-my-zsh, chezmoi, système |
 | `system/` (non déployé par chezmoi) | copies des fichiers `/etc` (zram, earlyoom, timeshift) + `install.sh` (sudo, appelé par le script racine) |
+| `system/chromium-sbx/` (non déployé par chezmoi) | partie root de Chromium sous compte dédié : `wayland-sandbox-socket.c` + `build.sh`, `chromium-sbx-inner`, `sudoers-chromium-sbx`, `tmpfiles-chromium-sbx.conf`, `install.sh` (sudo), `test.sh` (test complet), `README.md` |
 | `docs/` | **Guides spécialisés détaillés** (installation, maintenance, architecture technique de sécurité) |
 
 ---
@@ -33,7 +36,7 @@ Pour aller plus loin et gérer l'ensemble des cas d'usage, deux guides complets 
   Procédure pas à pas d'installation complète d'Arch Linux, choix et gestion du trousseau KeePassXC (restaurer une base existante vs en créer une nouvelle), configuration des applications (Chromium, Discord, Firejail), politique d'entretien du système et **procédures de restauration (rollback) de l'OS avec Timeshift** (en mode graphique, en console TTY ou depuis une clé Live USB).
 
 * 🛡️ **[Architecture de Sécurité & Fonctionnement des Technologies](docs/SECURITE_ET_ARCHITECTURE.md)** :  
-  Explication technique approfondie du fonctionnement sous le capot : comment Timeshift gère les instantanés incrémentaux par *hard links* sur ext4 sans ralentir le boot (`Nice=19`, `idle`), fonctionnement du protocole Secret Service et des popups d'autorisation ACL dans KeePassXC, isolation d'applications dans des namespaces Linux en RAM par Firejail, blocage des exfiltrations de données par le pare-feu sortant OpenSnitch, et architecture du coffre éphémère `keyring-vault`.
+  Explication technique approfondie du fonctionnement sous le capot : comment Timeshift gère les instantanés incrémentaux par *hard links* sur ext4 sans ralentir le boot (`Nice=19`, `idle`), fonctionnement du protocole Secret Service et des popups d'autorisation ACL dans KeePassXC, isolation d'applications dans des namespaces Linux en RAM par Firejail, blocage des exfiltrations de données par le pare-feu sortant OpenSnitch, stockage des tokens CLI, sandbox Bubblewrap de Chromium (failles de la première version), Chromium sous un compte Unix dédié (`chromium-sbx`) et sandbox des agents CLI (`bwrap-agent`).
 
 ---
 
@@ -77,7 +80,7 @@ zramctl ; swapon --show              # zram0 3,5 Go prio 100 + /swapfile 4 Go
 * `keepassxc` : gestionnaire de coffre-fort et fournisseur Secret Service avec popups d'autorisation ACL par application.
 * `opensnitch` : pare-feu applicatif sortant pour bloquer les fuites et exfiltrations de données ou tokens.
 * `firejail` : bac à sable isolant les programmes dans un dossier éphémère en RAM (accessible depuis Yazi avec la touche `O`).
-* `chromium` + `discord` : navigateur principal (chiffré via Secret Service) et messagerie.
+* `chromium` + `discord` : navigateur principal (chiffré via Secret Service, lancé sous le compte dédié `chromium` : voir `system/chromium-sbx/`) et messagerie. `xdg-dbus-proxy`, `bubblewrap`, `pinentry` : sandboxes et saisie des mots de passe.
 
 ### Hors script (à la main, facultatif)
 
@@ -98,7 +101,7 @@ retour arrière dans `~/.config/hypr/README.md`. À retenir :
   (ex. `hyprctl dispatch 'hl.dsp.focus({ workspace = "3" })'`). Tous les scripts de `scripts/` et
   `UserScripts/` sont déjà adaptés ; `UserScripts/hypr-window hide|show|focus` gère une fenêtre par pid.
 * **Ne jamais lancer `hyprctl reload full-reset`** (retour à chaud vers hyprlang) : plante Hyprland 0.56.2.
-* Le démarrage automatique est dans `lua/autostart.lua` (awww ou mpvpaper, caelestia `qs -c caelestia -d`,
+* Le démarrage automatique est dans `lua/autostart.lua` (awww ou mpvpaper, caelestia `qs -c caelestia -n -d`,
   vicinae, cliphist, easyeffects, portails). Un marqueur dans `$XDG_RUNTIME_DIR` évite de relancer à chaque reload.
 * Les couleurs wallust sont lues au chargement : les scripts font `hyprctl reload` après `wallust run`.
 * Capot : `UserScripts/lid-switch` ne coupe l'écran interne que si un autre écran est actif et que la
@@ -139,11 +142,16 @@ Autres choix de performance déjà dans les dotfiles : flou Hyprland `size = 4, 
 
 ## 5. caelestia-shell
 
-Lancé par `lua/autostart.lua` (`qs -c caelestia -d`). Recharger à la main :
+Lancé par `lua/autostart.lua` (`qs -c caelestia -n -d`). Recharger à la main (ou CTRL+SUPER+SHIFT+R) :
 
 ```bash
-qs kill -c caelestia && qs -c caelestia -d
+qs kill -c caelestia; sleep 0.5; pkill -x qs; sleep 0.5; qs -c caelestia -n -d
 ```
+
+`-n` (`--no-duplicate`) refuse de lancer une 2e instance. Le 15/09/2026, deux instances ont tourné après
+le boot, où le chargement de la config a pris ~27 s (cause non identifiée) ; origine probable : un redémarrage
+pendant ce chargement, quand `qs kill` (IPC) ne peut pas encore répondre. `pkill -x qs` sert de repli ;
+`-x` compare le nom du processus, donc la commande ne se tue pas elle-même.
 
 `services/Hypr.qml` sonde le gestionnaire de config (`hyprctl keyword zz_probe 1`) et traduit
 `workspace N`, `togglespecialworkspace`, `focuswindow`, `movetoworkspace`, `dpms …` en API Lua.
@@ -166,17 +174,18 @@ ses QML dans `/etc/xdg/quickshell/caelestia` (masqués par cette copie) et fourn
 
 ## 7. Partage d'écran (PipeWire + xdg-desktop-portal-hyprland)
 
-Les portails sont lancés par `scripts/PortalHyprland.sh` depuis `lua/autostart.lua`. Dans Chromium/Brave :
-`chrome://flags` → *Preferred Ozone platform* → **Wayland**.
+Les portails sont lancés par `scripts/PortalHyprland.sh` depuis `lua/autostart.lua`. Chromium (compte dédié) : Wayland est forcé par `chromium-sbx-inner`, et le partage d'écran passe par
+le portail ScreenCast, autorisé par son bus filtré. Brave : `chrome://flags` → *Preferred Ozone platform* → **Wayland**.
 
 ## 8. Sécurité et Restauration Système (Rollback)
 
 * **Timeshift au boot** : un instantané incrémental par liens physiques est créé à chaque démarrage via `timeshift-boot.service` (conserve les 5 derniers démarrages).
   - Restauration graphique : `sudo timeshift-gtk`.
   - Restauration d'urgence en TTY (si le bureau plante) : `sudo timeshift --restore`.
-* **KeePassXC (Secret Service)** : lancé minimisé au démarrage (`lua/autostart.lua`). Intercepte les demandes de clés et affiche une alerte d'autorisation par application.
+* **KeePassXC (Secret Service)** : lancé minimisé au démarrage (`lua/autostart.lua`). Répond aux demandes de secrets pour le **groupe exposé** de la base (à configurer par base, sinon popups de déverrouillage sans base) et peut demander confirmation avant de livrer un secret.
 * **OpenSnitch** : pare-feu applicatif actif au démarrage (`opensnitch-ui`), surveille et bloque les connexions sortantes suspectes.
-* **Tokens API en RAM (`keyring-vault`)** : les jetons Claude et Agy ne sont chargés qu'en mémoire vive (`/run/user/1000/secrets/`) et s'effacent complètement à l'extinction.
+* **Chromium sous le compte dédié `chromium` (`chromium-sbx`)** : profil dans `/var/lib/chromium-sbx` (0700), illisible par les programmes de la session, qui ne peuvent pas non plus inspecter ni signaler les processus de Chromium. Lancé sans mot de passe par une règle sudo limitée au lanceur interne root, qui refuse toute option. Chromium reste dans Bubblewrap ; son socket Wayland est un contexte de sécurité Hyprland (ni capture d'écran, ni clavier virtuel), son bus D-Bus est filtré, son son passe par PipeWire en accès restreint. Administration : `keepass-tokens sudo chromium <commande>`. Téléchargements et envois : `/srv/chromium-sbx/Downloads`. Voir `system/chromium-sbx/README.md` et `docs/SECURITE_ET_ARCHITECTURE.md` §7.
+* **Tokens CLI (Claude, Agy)** : dans le groupe « Tokens CLI » de la base KeePassXC principale (groupe non exposé au Secret Service), lu par `keepass-tokens`. Le mot de passe maître est demandé par application et reste valable 10 min après sa dernière utilisation ; pendant ce temps, le token est en RAM. Invisibles depuis Chromium (autre compte Unix) et d'un agent à l'autre (`bwrap-agent`, `docs/SECURITE_ET_ARCHITECTURE.md` §8). Première installation : `command claude setup-token`, puis `keepass-tokens set-claude`. `keyring-vault` a été retiré (voir `docs/SECURITE_ET_ARCHITECTURE.md` §5). **Disque non chiffré** : sans LUKS, `~/.claude/.credentials.json`, s'il existe encore, est lisible par qui accède au disque.
 * *Pour la documentation exhaustive et tous les cas de figure : voir `docs/INSTALLATION_ET_MAINTENANCE.md` et `docs/SECURITE_ET_ARCHITECTURE.md`.*
 
 ## 9. Synchroniser

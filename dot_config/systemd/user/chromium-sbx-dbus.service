@@ -1,0 +1,25 @@
+[Unit]
+Description=Bus D-Bus filtré pour Chromium (compte chromium)
+Documentation=file:///usr/local/bin/chromium-sbx-inner
+
+[Service]
+# Socket PRIVÉ (dans $XDG_RUNTIME_DIR) : Chromium n'y accède qu'à travers
+# chromium-sbx-dbus-relay, qui règle l'authentification entre comptes Unix.
+# Autorisé : KeePassXC (Secret Service, clé des cookies), notifications, inhibition de
+# veille, touches média (MPRIS), et parmi les portails seulement les réglages (thème)
+# et le partage d'écran. Pas de sélecteur de fichiers ni d'ouverture d'URL/fichier par
+# les applications de la session.
+UMask=0077
+ExecStartPre=-/usr/bin/rm -f %t/chromium-sbx-dbus
+ExecStart=/usr/bin/xdg-dbus-proxy ${DBUS_SESSION_BUS_ADDRESS} %t/chromium-sbx-dbus --filter \
+    --talk=org.freedesktop.secrets \
+    --talk=org.freedesktop.Notifications \
+    --talk=org.freedesktop.ScreenSaver \
+    --own=org.mpris.MediaPlayer2.chromium.* \
+    --call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Settings.*@/org/freedesktop/portal/desktop \
+    --call=org.freedesktop.portal.Desktop=org.freedesktop.portal.ScreenCast.*@/org/freedesktop/portal/desktop \
+    --call=org.freedesktop.portal.Desktop=org.freedesktop.DBus.Properties.*@/org/freedesktop/portal/desktop \
+    --call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Request.*@/org/freedesktop/portal/desktop/request/* \
+    --call=org.freedesktop.portal.Desktop=org.freedesktop.portal.Session.*@/org/freedesktop/portal/desktop/session/* \
+    --broadcast=org.freedesktop.portal.*=@/org/freedesktop/portal/*
+Restart=on-failure

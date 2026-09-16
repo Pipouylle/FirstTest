@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""dbus-uid-relay : relais D-Bus pour un client d'un AUTRE compte Unix.
+
+xdg-dbus-proxy transmet tel quel l'échange d'authentification du client. Les clients
+libdbus (Chromium, dbus-send) s'annoncent avec leur propre uid (mécanisme EXTERNAL) :
+le bus le refuse, puisque pour lui la connexion vient du proxy, qui tourne sous le compte
+de session. Les clients sd-bus (busctl) n'annoncent pas d'uid et passent, ce qui masque
+le problème. Ce relais termine l'authentification côté client, s'authentifie lui-même
+côté proxy, puis relaie les octets et les descripteurs de fichiers (SCM_RIGHTS) dans les
+deux sens.
+
+L'accès au relais est contrôlé par les permissions de son socket (groupe chromium).
+
+Usage : dbus-uid-relay <socket d'écoute> <socket du bus (xdg-dbus-proxy)>
+"""
+import array
+import os
+import signal
+import socket
+import sys
+import threading
+
+MAX_FDS = 253  # limite du noyau pour SCM_RIGHTS
+
+
+def read_line(sock, buf):
+    while b"\r\n" not in buf:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise ConnectionError("connexion fermée pendant l'authentification")
+        buf += chunk
+    line, buf = buf.split(b"\r\n", 1)
+    return line, buf
+
+
+def auth_bus(bus):
+    """S'authentifie auprès du bus avec l'uid du relais ; renvoie (guid, fds acceptés)."""
+    bus.sendall(b"\0AUTH EXTERNAL " + str(os.getuid()).encode().hex().encode() + b"\r\n")
+    line, rest = read_line(bus, b"")
+    if not line.startswith(b"OK "):
+        raise ConnectionError("authentification refusée par le bus : %r" % line)
+    guid = line[3:]
+    bus.sendall(b"NEGOTIATE_UNIX_FD\r\n")
+    line, rest = read_line(bus, rest)
+    bus.sendall(b"BEGIN\r\n")
+    return guid, line == b"AGREE_UNIX_FD"
+
+
+def auth_client(client, guid, unix_fd):
+    """Accepte l'authentification EXTERNAL du client quel que soit l'uid annoncé ;
+    renvoie les octets du protocole binaire déjà reçus après BEGIN."""
+    buf = b""
+    while not buf:
+        chunk = client.recv(4096)
+        if not chunk:
+            raise ConnectionError("client parti avant l'authentification")
+        buf = chunk
+    if buf[:1] != b"\0":
+        raise ConnectionError("octet nul initial absent")
+    buf = buf[1:]
+    authenticated = waiting_data = False
+    while True:
+        line, buf = read_line(client, buf)
+        words = line.split()
+        command = words[0] if words else b""
+        if command == b"AUTH" and len(words) >= 2 and words[1] == b"EXTERNAL":
+            if len(words) >= 3:
+                client.sendall(b"OK " + guid + b"\r\n")
+                authenticated = True
+            else:
+                client.sendall(b"DATA\r\n")
+                waiting_data = True
+        elif command == b"DATA" and waiting_data:
+            client.sendall(b"OK " + guid + b"\r\n")
+            authenticated, waiting_data = True, False
+        elif command == b"AUTH":
+            client.sendall(b"REJECTED EXTERNAL\r\n")
+        elif command == b"NEGOTIATE_UNIX_FD" and authenticated:
+            client.sendall(b"AGREE_UNIX_FD\r\n" if unix_fd else b"ERROR\r\n")
+        elif command == b"BEGIN" and authenticated:
+            return buf
+        elif command == b"CANCEL":
+            authenticated = waiting_data = False
+            client.sendall(b"REJECTED EXTERNAL\r\n")
+        else:
+            client.sendall(b"ERROR\r\n")
+
+
+def pump(src, dst):
+    """Relaie octets et descripteurs de fichiers de src vers dst jusqu'à la fermeture."""
+    try:
+        while True:
+            data, ancillary, _, _ = src.recvmsg(65536, socket.CMSG_SPACE(MAX_FDS * 4),
+                                                 socket.MSG_CMSG_CLOEXEC)
+            if not data:
+                break
+            fds = []
+            for level, kind, payload in ancillary:
+                if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                    fds.extend(array.array("i", payload))
+            try:
+                sent = 0
+                if fds:
+                    sent = dst.sendmsg([data], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                                 array.array("i", fds).tobytes())])
+                if sent < len(data):
+                    dst.sendall(data[sent:])
+            finally:
+                for fd in fds:
+                    os.close(fd)
+    except OSError:
+        pass
+    finally:
+        for sock in (src, dst):
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+
+def serve(client, bus_path):
+    bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        bus.connect(bus_path)
+        guid, unix_fd = auth_bus(bus)
+        pending = auth_client(client, guid, unix_fd)
+        if pending:
+            bus.sendall(pending)
+    except (OSError, ConnectionError) as err:
+        print("dbus-uid-relay : connexion abandonnée : %s" % err, file=sys.stderr)
+        client.close()
+        bus.close()
+        return
+    upstream = threading.Thread(target=pump, args=(client, bus), daemon=True)
+    upstream.start()
+    pump(bus, client)
+    upstream.join()
+    client.close()
+    bus.close()
+
+
+def main():
+    if len(sys.argv) != 3:
+        print(__doc__.strip().splitlines()[-1], file=sys.stderr)
+        return 2
+    listen_path, bus_path = sys.argv[1], sys.argv[2]
+
+    def stop(*_):
+        try:
+            os.unlink(listen_path)
+        except OSError:
+            pass
+        os._exit(0)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, stop)
+    try:
+        os.unlink(listen_path)
+    except FileNotFoundError:
+        pass
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(listen_path)
+    os.chmod(listen_path, 0o660)
+    server.listen(64)
+    print("prêt : %s -> %s" % (listen_path, bus_path), flush=True)
+    while True:
+        client, _ = server.accept()
+        threading.Thread(target=serve, args=(client, bus_path), daemon=True).start()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

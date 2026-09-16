@@ -1,0 +1,14 @@
+[Unit]
+Description=Relais D-Bus entre le compte chromium et le bus filtré
+Documentation=file:///usr/local/bin/chromium-sbx-inner
+Requires=chromium-sbx-dbus.service
+After=chromium-sbx-dbus.service
+
+[Service]
+# Chromium (libdbus) s'annonce avec l'uid du compte chromium, que le bus refuserait à
+# travers xdg-dbus-proxy : le relais accepte cette annonce, s'authentifie lui-même auprès
+# du proxy et relaie messages et descripteurs de fichiers. Socket en 0660, groupe chromium
+# (dossier setgid).
+ExecStartPre=-/usr/bin/rm -f /run/chromium-sbx/bus
+ExecStart=%h/.local/bin/dbus-uid-relay /run/chromium-sbx/bus %t/chromium-sbx-dbus
+Restart=on-failure

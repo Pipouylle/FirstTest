@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# chromium-sbx-inner : partie de Chromium qui tourne sous le compte « chromium ».
+# Lancé par ~/.local/bin/chromium-sbx via sudo (règle sans mot de passe limitée à ce
+# fichier). Il DOIT appartenir à root et n'être modifiable que par root : sinon la
+# session pourrait lui faire exécuter n'importe quoi en tant que chromium, donc lire
+# le profil. Pour la même raison, il refuse toute option (Chromium en a plusieurs qui
+# lancent un programme : --renderer-cmd-prefix, --gpu-launcher...) : seuls des URL ou
+# chemins sont transmis, après « -- ».
+#
+# - Profil et données : /var/lib/chromium-sbx (0700, compte chromium)
+# - Téléchargements : /srv/chromium-sbx/Downloads, partagé avec la session par ACL
+# - Affichage, bus D-Bus filtré et son : sockets préparés par la session dans
+#   /run/chromium-sbx (dossier setgid chromium). Le socket Wayland est un contexte de
+#   sécurité Hyprland : ni capture d'écran, ni clavier virtuel, ni presse-papiers global.
+# - Toujours dans Bubblewrap : Chromium ne voit que son home, /usr, /etc et le GPU.
+# ==============================================================================
+set -euo pipefail
+umask 077
+
+SBX_HOME=/var/lib/chromium-sbx
+SHARED=/run/chromium-sbx
+DOWNLOADS=/srv/chromium-sbx/Downloads
+RUN=/run/chromium   # $XDG_RUNTIME_DIR dans le sandbox
+
+if [[ $(id -un) != chromium ]]; then
+    echo "chromium-sbx-inner : à lancer en tant que chromium, par chromium-sbx" >&2
+    exit 1
+fi
+for arg in "$@"; do
+    if [[ $arg == -* ]]; then
+        echo "chromium-sbx-inner : option refusée : $arg" >&2
+        exit 2
+    fi
+done
+for s in wayland bus; do
+    if [[ ! -S $SHARED/$s ]]; then
+        echo "chromium-sbx-inner : $SHARED/$s absent, lancer Chromium par chromium-sbx" >&2
+        exit 1
+    fi
+done
+mkdir -p "$SBX_HOME/.config/chromium" "$SBX_HOME/.tmp" "$SBX_HOME/Downloads"
+
+args=(
+    --new-session
+    --ro-bind /usr /usr
+    --ro-bind /lib /lib
+    --ro-bind /lib64 /lib64
+    --ro-bind /bin /bin
+    --ro-bind /etc /etc
+    --ro-bind-try /opt /opt
+    --dev /dev
+    --dev-bind-try /dev/dri /dev/dri
+    --ro-bind-try /sys/dev /sys/dev
+    --ro-bind-try /sys/devices /sys/devices
+    --ro-bind-try /sys/bus /sys/bus
+    --ro-bind-try /sys/class /sys/class
+    --proc /proc
+    --bind "$SBX_HOME/.tmp" /tmp          # partagé entre lancements : un 2e lancement passe l'URL au Chromium ouvert
+    --bind "$SBX_HOME" "$SBX_HOME"
+    --bind "$DOWNLOADS" "$SBX_HOME/Downloads"
+    --perms 0700 --dir "$RUN"
+    --ro-bind "$SHARED/wayland" "$RUN/wayland-0"
+    --ro-bind "$SHARED/bus" "$RUN/bus"
+    --setenv HOME "$SBX_HOME"
+    --setenv XDG_CONFIG_HOME "$SBX_HOME/.config"
+    --setenv XDG_RUNTIME_DIR "$RUN"
+    --setenv XDG_CURRENT_DESKTOP Hyprland
+    --setenv WAYLAND_DISPLAY wayland-0
+    --setenv DBUS_SESSION_BUS_ADDRESS "unix:path=$RUN/bus"
+    --unsetenv DISPLAY
+)
+if [[ -S $SHARED/pulse ]]; then
+    args+=(--ro-bind "$SHARED/pulse" "$RUN/pulse" --setenv PULSE_SERVER "unix:$RUN/pulse")
+fi
+
+# /usr/bin/chromium : le lanceur Arch, qui lit $XDG_CONFIG_HOME/chromium-flags.conf
+exec bwrap "${args[@]}" /usr/bin/chromium --ozone-platform=wayland -- "$@"

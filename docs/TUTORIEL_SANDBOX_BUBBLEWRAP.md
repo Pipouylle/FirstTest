@@ -12,8 +12,10 @@ Dans un système Linux standard :
 
 Avec **Bubblewrap et les Mount Namespaces** :
 1. **L'application est enfermée dans un faux `$HOME` en RAM (tmpfs)** : Elle ne peut voir ni vos clés SSH, ni vos documents, ni vos tokens cachés.
-2. **Pour le reste de votre ordinateur, son profil est invisible** : Même pendant que l'application tourne, les autres programmes de votre PC ne voient qu'un dossier vide sur le système hôte.
+2. **Son profil est rangé à part** : il vit dans `~/.local/share/secure-profiles/<app>/` et n'apparaît sur `~/.config/<app>` qu'à l'intérieur du bac à sable. Attention : ce dossier reste lisible sur l'hôte par tout programme de votre compte ; le bac à sable protège vos fichiers **de l'application**, pas l'inverse.
 3. **Zéro privilège root requis** : Bubblewrap s'exécute directement en utilisateur simple via les namespaces non privilégiés du noyau Linux.
+
+> ⚠️ **Bubblewrap est à sens unique.** Il empêche l'application de **sortir** (lire vos fichiers, joindre vos sockets), mais pas un programme lancé sous le même compte d'**entrer** : le compte qui crée le namespace en est propriétaire, donc `/proc/<pid>/root` (les fichiers vus par l'appli, tmpfs compris) et `/proc/<pid>/environ` (ses variables d'environnement) restent lisibles depuis votre session (vérifié le 16/09/2026). Pour protéger les **données de l'application** contre les autres programmes de votre compte, il faut la faire tourner sous un **compte Unix dédié** : c'est ce que fait `system/chromium-sbx` pour Chromium (voir `SECURITE_ET_ARCHITECTURE.md` §7).
 
 ---
 
@@ -39,7 +41,9 @@ bwrap-app vlc ma_video.mp4
 - Il crée un profil de données étanche dans `~/.local/share/secure-profiles/<nom_application>/` (avec permissions `700`).
 - Il monte ce dossier sur `~/.config/<nom_application>` à l'intérieur du bac à sable.
 - Il monte votre dossier `~/Downloads` pour pouvoir échanger des fichiers.
-- Il fournit le son (PipeWire), l'affichage (Wayland/X11) et l'accélération graphique (GPU).
+- De `$XDG_RUNTIME_DIR`, il ne monte que l'affichage (socket Wayland), le son (`pipewire-0`, `pulse/native`) et un **bus D-Bus filtré** par `xdg-dbus-proxy` : `org.freedesktop.secrets`, `org.freedesktop.portal.*`, `org.freedesktop.Notifications`, `org.freedesktop.ScreenSaver`, et la possession des noms MPRIS de l'appli (`org.mpris.MediaPlayer2.<app>`, `org.mpris.MediaPlayer2.chromium.*` pour Electron). L'IPC Hyprland, `systemd --user` et les agents SSH/GPG restent hors d'atteinte.
+- Il donne à l'appli un `/tmp` **commun à tous ses lancements** (`$XDG_RUNTIME_DIR/bwrap-app/<app>/tmp`, invisible de l'hôte) : un 2e lancement est transmis à l'instance ouverte au lieu d'ouvrir le même profil une seconde fois.
+- Il fournit l'accélération graphique (`/dev/dri`).
 - **Tout le reste de votre `$HOME` est masqué et inaccessible.**
 
 ---
@@ -50,11 +54,23 @@ Si vous voulez personnaliser précisément les autorisations d'une application (
 
 ### Anatomie d'un bac à sable Bubblewrap
 
-Voici le squelette standard d'une commande `bwrap` :
+Voici le squelette repris de `bwrap-app`, `bwrap-agent` et `chromium-sbx-inner` (le plus simple est de copier `bwrap-app` ; il gère en plus un `WAYLAND_DISPLAY` absolu, l'absence de `DBUS_SESSION_BUS_ADDRESS` et le nettoyage des vieux sockets) :
 
 ```bash
-bwrap \
-    # 1. Système de fichiers de base de Linux (en lecture seule)
+RUNTIME_DIR="$XDG_RUNTIME_DIR"
+STATE_DIR="$RUNTIME_DIR/bwrap-app/mon_app"
+mkdir -p -m 700 "$RUNTIME_DIR/bwrap-app" "$STATE_DIR" "$STATE_DIR/tmp"
+
+# Bus D-Bus filtré : un proxy par lancement, qui s'arrête quand bwrap se termine
+BUS_SOCKET="$STATE_DIR/bus-$$"
+exec {proxy_fd}< <(exec xdg-dbus-proxy "$DBUS_SESSION_BUS_ADDRESS" "$BUS_SOCKET" --fd=1 --filter \
+    --talk='org.freedesktop.portal.*' \
+    --talk=org.freedesktop.Notifications)
+read -r -N 1 -u "$proxy_fd" _ready
+
+exec bwrap \
+    --new-session \
+    --sync-fd "$proxy_fd" \
     --ro-bind /usr /usr \
     --ro-bind /lib /lib \
     --ro-bind /lib64 /lib64 \
@@ -62,65 +78,54 @@ bwrap \
     --ro-bind /etc /etc \
     --ro-bind-try /opt /opt \
     --ro-bind-try /run/dbus /run/dbus \
-    # 2. Périphériques matériels et kernel
     --dev /dev \
+    --dev-bind-try /dev/dri /dev/dri \
+    --ro-bind-try /sys/dev /sys/dev \
+    --ro-bind-try /sys/devices /sys/devices \
+    --ro-bind-try /sys/bus /sys/bus \
+    --ro-bind-try /sys/class /sys/class \
     --proc /proc \
-    --tmpfs /tmp \
-    # 3. Audio (PipeWire), Affichage (Wayland) et D-Bus
-    --bind "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR" \
-    # 4. Le faux dossier personnel en RAM (étanche)
+    --bind "$STATE_DIR/tmp" /tmp \
+    --perms 0700 --dir "$RUNTIME_DIR" \
+    --ro-bind "$RUNTIME_DIR/$WAYLAND_DISPLAY" "$RUNTIME_DIR/$WAYLAND_DISPLAY" \
+    --ro-bind-try "$RUNTIME_DIR/pipewire-0" "$RUNTIME_DIR/pipewire-0" \
+    --ro-bind-try "$RUNTIME_DIR/pulse/native" "$RUNTIME_DIR/pulse/native" \
+    --ro-bind "$BUS_SOCKET" "$RUNTIME_DIR/bus" \
+    --setenv DBUS_SESSION_BUS_ADDRESS "unix:path=$RUNTIME_DIR/bus" \
     --tmpfs "$HOME" \
-    # 5. Les dossiers que vous autorisez spécifiquement
     --bind "$HOME/.local/share/secure-profiles/mon_app" "$HOME/.config/mon_app" \
     --bind "$HOME/Downloads" "$HOME/Downloads" \
-    # 6. Polices et thèmes pour un rendu graphique propre
     --ro-bind-try "$HOME/.icons" "$HOME/.icons" \
     --ro-bind-try "$HOME/.local/share/fonts" "$HOME/.local/share/fonts" \
     --ro-bind-try "$HOME/.config/fontconfig" "$HOME/.config/fontconfig" \
-    # 7. La commande à exécuter
     /usr/bin/mon_application "$@"
 ```
+
+| Bloc | Rôle |
+|---|---|
+| `xdg-dbus-proxy` + `--sync-fd` | bus de session filtré : l'appli ne voit que les noms autorisés (`--talk`, `--own`). Sans filtre, `systemd --user` est joignable et permet de lancer n'importe quelle commande hors du bac à sable |
+| `/usr`, `/lib`, `/bin`, `/etc`, `/opt` | système de base en lecture seule |
+| `--dev`, `/dev/dri`, `/sys/…` | périphériques minimaux et GPU (sans `/dev/dri`, rendu logiciel) |
+| `--bind "$STATE_DIR/tmp" /tmp` | `/tmp` propre à l'appli mais **commun à ses lancements** : les verrous « instance unique » (Chromium, Electron) y placent leur socket. Avec `--tmpfs /tmp`, un 2e lancement ouvre le même profil une seconde fois |
+| `--dir "$RUNTIME_DIR"` + sockets | seuls Wayland, PipeWire, Pulse et le bus filtré. **Ne jamais monter `$XDG_RUNTIME_DIR` entier** : il contient l'IPC Hyprland (`hyprctl dispatch exec`), les agents SSH/GPG et le vrai bus de session |
+| `--tmpfs "$HOME"` + binds | faux dossier personnel en RAM, avec seulement le profil de l'appli et `~/Downloads` |
+| `--new-session` | détache l'appli du terminal qui l'a lancée |
+
+> ⚠️ Les chemins de sockets UNIX sont limités à **108 caractères**. Si vous placez `STATE_DIR` dans un chemin long, le socket du proxy n'est pas créé au chemin attendu et `bwrap` échoue avec *« Can't find source path …/bus-NNNN »*. Gardez `STATE_DIR` sous `$XDG_RUNTIME_DIR`.
 
 ---
 
 ## 📱 Exemple concret : Isoler Discord à 100 % (Anti-Token Grabber)
 
-Pour empêcher tout script d'accéder aux tokens de Discord et empêcher Discord de fouiller sur votre PC :
+Pour empêcher Discord de fouiller sur votre PC, inutile d'écrire un script dédié : `bwrap-app` applique déjà tout le cloisonnement ci-dessus.
 
-### Étape 1 : Créer le script `~/.local/bin/bwrap-discord`
+### Étape 1 : Tester le lancement isolé
 
 ```bash
-cat <<'EOF' > ~/.local/bin/bwrap-discord
-#!/usr/bin/env bash
-set -euo pipefail
-
-SECURE_DIR="$HOME/.local/share/secure-profiles/discord"
-mkdir -p "$SECURE_DIR" "$HOME/Downloads"
-chmod 700 "$SECURE_DIR"
-
-exec bwrap \
-    --ro-bind /usr /usr \
-    --ro-bind /lib /lib \
-    --ro-bind /lib64 /lib64 \
-    --ro-bind /bin /bin \
-    --ro-bind /etc /etc \
-    --ro-bind-try /opt /opt \
-    --ro-bind-try /run/dbus /run/dbus \
-    --dev /dev \
-    --proc /proc \
-    --tmpfs /tmp \
-    --bind "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR" \
-    --tmpfs "$HOME" \
-    --bind "$SECURE_DIR" "$HOME/.config/discord" \
-    --bind "$HOME/Downloads" "$HOME/Downloads" \
-    --ro-bind-try "$HOME/.icons" "$HOME/.icons" \
-    --ro-bind-try "$HOME/.local/share/fonts" "$HOME/.local/share/fonts" \
-    --ro-bind-try "$HOME/.config/fontconfig" "$HOME/.config/fontconfig" \
-    /usr/bin/discord "$@"
-EOF
-
-chmod +x ~/.local/bin/bwrap-discord
+bwrap-app discord
 ```
+
+Le profil isolé est créé vide dans `~/.local/share/secure-profiles/discord/` : il faut se reconnecter une fois (l'ancien `~/.config/discord` n'est pas migré). Un 2e `bwrap-app discord` est transmis à l'instance ouverte au lieu d'ouvrir le profil une seconde fois (mécanisme « instance unique » de Chromium, qu'Electron réutilise ; vérifié avec Chromium).
 
 ### Étape 2 : Créer le raccourci d'application graphique
 Pour que votre lanceur (Vicinae, Rofi, etc.) utilise ce bac à sable automatiquement :
@@ -132,7 +137,7 @@ Name=Discord (Sécurisé)
 StartupWMClass=discord
 Comment=Client de messagerie Discord isolé dans un Mount Namespace Bubblewrap
 GenericName=Internet Messenger
-Exec=/home/timothe/.local/bin/bwrap-discord %U
+Exec=/home/timothe/.local/bin/bwrap-app discord %U
 Icon=discord
 Type=Application
 Categories=Network;InstantMessaging;
@@ -167,18 +172,22 @@ Le fichier devient un fichier vide de 0 octet dans le bac à sable.
 
 ## 🔍 Comment vérifier que l'isolation fonctionne ?
 
-Ouvrez un terminal pendant que votre application tourne dans `bwrap` :
-
-1. Regardez le dossier standard de l'application sur votre système hôte :
+1. **Le profil actif n'est pas dans `~/.config/<app>` sur l'hôte** :
    ```bash
-   ls -la ~/.config/chromium
-   # OU
    ls -la ~/.config/discord
    ```
-   **Résultat** : Le dossier est vide sur votre système hôte ! Le profil actif n'existe que dans le namespace privé de l'application.
+   Le profil vit dans `~/.local/share/secure-profiles/<app>/`. Si `~/.config/<app>` contient des données sur l'hôte, elles viennent d'un lancement **hors** bac à sable (application lancée en direct, sans `bwrap-app`) : à examiner puis supprimer une fois l'application fermée, sinon ces données restent lisibles par toute la session.
 
-2. Même si un malware tente d'exécuter :
+2. **Depuis l'intérieur, seul l'autorisé est visible** (lance un shell dans le même bac à sable ; crée au passage un profil `secure-profiles/bash` inutile, supprimable ensuite) :
    ```bash
-   cat ~/.config/discord/Local\ Storage/leveldb/*.ldb
+   bwrap-app bash -c '
+     ls -A "$XDG_RUNTIME_DIR"
+     busctl --user list --no-legend | awk "{print \$1}" | grep -v "^:"
+     busctl --user status org.freedesktop.systemd1 >/dev/null 2>&1 && echo "systemd JOIGNABLE" || echo "systemd bloqué"
+     hyprctl version >/dev/null 2>&1 && echo "Hyprland JOIGNABLE" || echo "Hyprland bloqué"
+     ls ~/.ssh
+   '
    ```
-   Il recevra une erreur *« Fichier ou dossier introuvable »*.
+   **Résultat attendu** : `bus pipewire-0 pulse wayland-1` ; uniquement `org.freedesktop.DBus`, `org.freedesktop.Notifications`, des `org.freedesktop.portal.*` et `org.freedesktop.secrets` ; `systemd bloqué` ; `Hyprland bloqué` (`hyprctl version` doit échouer) ; `~/.ssh` introuvable.
+
+3. **Un 2e lancement ne double pas l'appli** : relancer la même commande pendant que l'appli tourne doit la réutiliser (pour Chromium : message *« Ouverture dans une session de navigateur existante »*).

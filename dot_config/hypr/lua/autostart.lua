@@ -29,7 +29,7 @@ hl.on("hyprland.start", function()
   -- nm-applet et blueman-applet ne servaient qu'a poser une icone dans le tray, en
   -- doublon des indicateurs reseau et bluetooth natifs de la barre caelestia (qui gere
   -- aussi la saisie du mot de passe wifi et l'appairage). Ils ne sont plus lances.
-  hl.exec_cmd("qs -c caelestia -d")   -- barre, notifications, verrouillage
+  hl.exec_cmd("qs -c caelestia -n -d")   -- barre, notifications, verrouillage (-n : jamais de 2e instance)
   hl.exec_cmd("vicinae server")       -- lanceur
 
   hl.exec_cmd("wl-paste --type text --watch cliphist store")
