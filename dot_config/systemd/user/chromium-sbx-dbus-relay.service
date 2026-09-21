@@ -9,6 +9,10 @@ After=chromium-sbx-dbus.service
 # travers xdg-dbus-proxy : le relais accepte cette annonce, s'authentifie lui-même auprès
 # du proxy et relaie messages et descripteurs de fichiers. Socket en 0660, groupe chromium
 # (dossier setgid).
+# --filechooser : le relais répond aux demandes du sélecteur de fichiers (portail FileChooser)
+# avec chromium-sbx-fichiers, qui copie les fichiers choisis dans /srv/chromium-sbx/Envois.
+# La purge au démarrage retire les copies dont le minuteur a été perdu (redémarrage).
 ExecStartPre=-/usr/bin/rm -f /run/chromium-sbx/bus
-ExecStart=%h/.local/bin/dbus-uid-relay /run/chromium-sbx/bus %t/chromium-sbx-dbus
+ExecStartPre=-%h/.local/bin/chromium-sbx-fichiers purger
+ExecStart=%h/.local/bin/dbus-uid-relay --filechooser %h/.local/bin/chromium-sbx-fichiers /run/chromium-sbx/bus %t/chromium-sbx-dbus
 Restart=on-failure

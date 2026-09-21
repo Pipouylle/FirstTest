@@ -68,9 +68,10 @@ Chromium tourne sous le compte système **`chromium`** : son profil (cookies, se
   ```bash
   cd ~/.local/share/chezmoi/system/chromium-sbx
   ./build.sh                                     # compile wayland-sandbox-socket (sans sudo)
-  sudo ./install.sh                              # compte, lanceur interne, sudoers, /run/chromium-sbx, /srv/chromium-sbx/Downloads
+  sudo ./install.sh                              # compte, lanceur interne, sudoers, /run/chromium-sbx, /srv/chromium-sbx/{Downloads,Envois}
   systemctl --user daemon-reload && systemctl --user restart pipewire-pulse
   keepass-tokens set-account chromium            # mot de passe du compte, rangé dans KeePassXC « Comptes sandbox »
+  install -d -m 700 ~/.config/keepass-tokens && ( umask 077; printf 'Phrase : '; IFS= read -rs p && printf '%s\n' "$p" > ~/.config/keepass-tokens/phrase; unset p; echo )   # saisie cachée : jamais dans l'historique
   ./test.sh                                      # test complet (ouvre un Chromium de test)
   ```
   `install.sh` s'exécute en root depuis un dossier modifiable par ton compte : relis-le avant de le lancer.
@@ -81,9 +82,9 @@ Chromium tourne sous le compte système **`chromium`** : son profil (cookies, se
   ```
   Vérifier ensuite onglets, connexions et Proton Pass, puis **supprimer l'ancienne copie**, sinon elle reste lisible par la session. Les cookies suivent, car le compte `chromium` récupère la même clé dans KeePassXC.
 - **Administration du compte** : `keepass-tokens sudo chromium <commande>`. Le mot de passe du compte est lu dans le groupe KeePassXC « Comptes sandbox », avec une fenêtre de mot de passe maître **à chaque fois**. `sudo` n'accepte que ce mot de passe pour agir en tant que `chromium` (`Defaults>chromium targetpw, timestamp_timeout=0`).
-- **Fichiers** : Chromium ne voit plus ton home. Téléchargements et envois passent par `/srv/chromium-sbx/Downloads`, ouvert à la session par ACL.
+- **Fichiers** : Chromium ne voit plus ton home. Les téléchargements vont dans `/srv/chromium-sbx/Downloads`, ouvert à la session par ACL. Pour joindre ou envoyer un fichier, Chromium ouvre la fenêtre de sélection de la session (`chromium-sbx-fichiers`, appelé par le relais). Le mot de passe maître KeePassXC est demandé (pas de nouvelle demande pendant 10 min). Après ton choix, les fichiers sont copiés dans `/srv/chromium-sbx/Envois`, et la copie est supprimée au bout d'1 h — sauf un fichier déjà choisi dans `/srv/chromium-sbx/Downloads`, que Chromium a écrit lui-même : il est renvoyé sans copie. Les fichiers sensibles (clés SSH, base et fichier clé KeePassXC, historique du shell, identifiants d'outils…) sont refusés, ainsi que tout lien qui entre dans les téléchargements de Chromium ou qui en sort. « Enregistrer sous » enregistre directement dans les téléchargements.
 - **OpenSnitch** : les connexions de Chromium viennent d'un nouveau compte, il faut les autoriser à nouveau.
-- **Maintenance** : les mises à jour de Chromium (`pacman`) ne demandent rien. Après une modification de `chromium-sbx-inner`, `sudoers-chromium-sbx` ou `tmpfiles-chromium-sbx.conf`, relancer `sudo ./install.sh`, puis `./test.sh` pour revérifier. Après une modification des services ou du relais : `chezmoi apply` puis `systemctl --user daemon-reload`. Pour les agents (`agy`, `claude` dans `bwrap-agent`), `chezmoi`, `~/.config` et `sudo` sont inaccessibles : faire ces opérations depuis un terminal normal (ou `command claude`).
+- **Maintenance** : les mises à jour de Chromium (`pacman`) ne demandent rien. Après une modification de `chromium-sbx-inner`, `sudoers-chromium-sbx` ou `tmpfiles-chromium-sbx.conf`, relancer `sudo ./install.sh`, puis `./test.sh` pour revérifier. Après une modification des services, du relais ou de `chromium-sbx-fichiers` : `chezmoi apply`, `systemctl --user daemon-reload`, puis, Chromium fermé, `systemctl --user restart chromium-sbx-dbus-relay`. Tests automatiques : `cd system/chromium-sbx && CHROMIUM_FICHIERS_BIN=~/.local/bin python3 -m unittest discover -s tests -v`. Pour les agents (`agy`, `claude` dans `bwrap-agent`), `chezmoi`, `~/.config` et `sudo` sont inaccessibles : faire ces opérations depuis un terminal normal (ou `command claude`).
 
 #### B. Discord
 - Installé nativement (`/usr/bin/discord`).
@@ -138,6 +139,12 @@ command claude setup-token       # token Claude longue durée (contourne la fonc
 keepass-tokens set-claude        # colle ce token : il est enregistré dans la base
 ```
 `keepass-tokens lock` reverrouille tout de suite. `command agy` / `command claude` lancent les outils sans la base (connexion classique).
+
+**Phrase anti-hameçonnage** : chaque demande de mot de passe de `keepass-tokens` (tokens, comptes dédiés, sélecteur de fichiers de Chromium) commence par la phrase de `~/.config/keepass-tokens/phrase`. Une fausse fenêtre, par exemple une page web qui imite la demande, ne la connaît pas : si elle manque ou est fausse, ne rien taper. Elle se crée à la main (hors chezmoi), **sans jamais l'écrire sur une ligne de commande** : zsh la garderait dans `~/.zsh_history`. Si elle y a déjà été tapée, effacer la ligne de `~/.zsh_history`. Relancer ensuite les agents ouverts, qui voient ce fichier tant qu'ils n'ont pas redémarré :
+```bash
+install -d -m 700 ~/.config/keepass-tokens
+( umask 077; printf 'Phrase : '; IFS= read -rs p && printf '%s\n' "$p" > ~/.config/keepass-tokens/phrase; unset p; echo )
+```
 
 #### Cas C : Utilisation de GNOME Keyring au lieu de KeePassXC
 Le paquet `gnome-keyring` n'est plus installé, et ses unités systemd utilisateur sont masquées (`~/.config/systemd/user/gnome-keyring-daemon.service` et `.socket` pointent vers `/dev/null`). Un seul programme peut détenir `org.freedesktop.secrets` : pour revenir à GNOME Keyring, désactivez d'abord l'intégration Secret Service de KeePassXC, réinstallez `gnome-keyring`, puis démasquez les unités (`systemctl --user unmask gnome-keyring-daemon.service gnome-keyring-daemon.socket`).

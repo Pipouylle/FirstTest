@@ -142,6 +142,7 @@ OpenSnitch est inspiré du célèbre *Little Snitch* sous macOS :
 ### Modèle d'accès : un mot de passe par application, valable 10 min
 Le Secret Service de KeePassXC ne sait pas redemander un mot de passe à chaque accès. Une fois la base déverrouillée, il livre les secrets du groupe exposé à tout client, au mieux après une confirmation Autoriser/Refuser. D'où la lecture du groupe « Tokens CLI » par `keepassxc-cli`, qui ouvre lui-même le fichier de la base et exige le mot de passe maître (et le fichier clé) à chaque fois, que KeePassXC soit ouvert ou non :
 - **Chaque application se déverrouille séparément.** Le mot de passe est demandé au lancement d'`agy` ou de `claude`, dans une fenêtre `pinentry-gtk`. Une règle Hyprland l'affiche flottante et centrée, et elle se ferme d'office au bout de 120 s (`timeout`, car `pinentry-gtk` ignore `SETTIMEOUT`). Hors session graphique, la saisie se fait dans le terminal. `pinentry-qt` n'est pas utilisé : il lui manque `libKF6WindowSystem`, fournie par le paquet `kwindowsystem`. L'application se relance ensuite sans le redemander jusqu'à **10 min après sa dernière utilisation** (`UNLOCK_SECONDS`), pendant que l'autre reste verrouillée.
+- **Phrase anti-hameçonnage.** Chaque demande de mot de passe (fenêtre ou terminal) commence par la phrase de `~/.config/keepass-tokens/phrase` (0600, hors chezmoi). Une imitation ne la connaît pas : page web, ou programme sans accès à ce fichier (les agents compris, car `bwrap-agent` le masque, ainsi que `~/.zsh_history` et `~/.bash_history` où elle aurait pu être tapée). Ne jamais l'écrire sur une ligne de commande. Si elle manque ou est fausse, ne rien taper. Ajoutée le 17/09/2026 avec le sélecteur de fichiers de Chromium, qui fait apparaître des demandes de mot de passe pendant la navigation (§7).
 - **Pendant cette période**, le token de l'application est en clair dans `$XDG_RUNTIME_DIR/secrets/<appli>/` (RAM, `0600`). À l'expiration, un minuteur `systemd-run --user` l'efface. `keepass-tokens lock` reverrouille tout de suite.
 - **Rafraîchissement d'agy.** agy renouvelle son jeton d'accès toutes les heures, en réécrivant son fichier sur place (vérifié) : le lien est suivi et le token reste en RAM. Seul un **nouveau jeton de rafraîchissement** est réenregistré dans la base, avec une nouvelle demande de mot de passe à la sortie. Si cet enregistrement échoue, le token est gardé en RAM et marqué « à enregistrer » : le minuteur ne l'efface pas, et l'enregistrement est retenté au lancement suivant.
 - **Token laissé en clair.** Un token agy trouvé en clair sur le disque (connexion faite hors du script, arrêt brutal) est enregistré dans la base, puis retiré du disque.
@@ -254,6 +255,8 @@ chromium.desktop ─> ~/.local/bin/chromium-sbx
 | config PipeWire | `~/.config/pipewire/pipewire-pulse.conf.d/chromium-sbx.conf` | socket son en accès restreint |
 | `/run/chromium-sbx` | `/etc/tmpfiles.d/chromium-sbx.conf` | dossier de passage des sockets |
 | `/srv/chromium-sbx/Downloads` | 2770 `chromium:chromium` + ACL | téléchargements partagés avec la session |
+| `chromium-sbx-fichiers` | `~/.local/bin/` | sélecteur de fichiers : mot de passe KeePassXC, fenêtre de sélection, copie des fichiers choisis (voir « Sélecteur de fichiers ») |
+| `/srv/chromium-sbx/Envois` | 2750 `timothe:chromium` | copies des fichiers envoyés, lisibles par Chromium, supprimées au bout d'1 h |
 | `keepass-tokens set-account` / `keepass-tokens sudo` | `~/.local/bin/keepass-tokens` | accès au compte avec un mot de passe rangé dans KeePassXC |
 | sources, `build.sh`, `install.sh` | `system/chromium-sbx/` (dépôt chezmoi) | partie root, installée par `sudo ./install.sh` |
 
@@ -268,7 +271,7 @@ C'est le seul programme que la session peut faire tourner en tant que `chromium`
 
 Il lance ensuite `/usr/bin/chromium` (le lanceur Arch, qui lit `$XDG_CONFIG_HOME/chromium-flags.conf`, c'est-à-dire `/var/lib/chromium-sbx/.config/chromium-flags.conf` : `--password-store=gnome-libsecret`, appartenant au compte chromium) avec `--ozone-platform=wayland`, dans Bubblewrap :
 - `/usr`, `/lib`, `/lib64`, `/bin`, `/etc`, `/opt` en lecture seule ; `/dev` minimal plus `/dev/dri` (GPU) ; `/sys/{dev,devices,bus,class}` en lecture seule ; `--proc` ; `--new-session` ;
-- le home du compte en lecture-écriture, `/srv/chromium-sbx/Downloads` monté sur son `~/Downloads` ;
+- le home du compte en lecture-écriture, `/srv/chromium-sbx/Downloads` monté sur son `~/Downloads`, `/srv/chromium-sbx/Envois` en lecture seule au même chemin ;
 - **`/tmp` = `/var/lib/chromium-sbx/.tmp`**, partagé entre les lancements : un 2e lancement (lien ouvert depuis une autre appli) transmet l'URL à l'instance ouverte ;
 - `$XDG_RUNTIME_DIR` = `/run/chromium` (`0700`), qui ne contient que `wayland-0`, `bus` et `pulse`, montés depuis `/run/chromium-sbx`.
 
@@ -296,7 +299,7 @@ timothe ALL=(chromium) NOPASSWD: /usr/local/bin/chromium-sbx-inner
 - Permissions observées : `wayland` et `bus` en `rw-rw----` ; `pulse` créé par pipewire-pulse en `rwxrwxrwx`, protégé par le dossier.
 
 ### Les téléchargements partagés
-`/srv/chromium-sbx` (0750 `chromium:chromium`, ACL `u:timothe:x`) et `/srv/chromium-sbx/Downloads` (2770, ACL `u:timothe:rwx` et ACL par défaut pour timothe, l'utilisateur et le groupe chromium). La session accède à **ce seul dossier**. Il est hors du home de chromium : donner à la session le droit de traverser `/var/lib/chromium-sbx` exposerait tout sous-dossier créé avec des droits permissifs.
+`/srv/chromium-sbx` est `root:root`, `0755` : traversée seulement, pour la session comme pour chromium. Ni l'un ni l'autre n'y a de droit d'écriture, donc ni l'un ni l'autre ne peut renommer ou remplacer `Downloads` ou `Envois` (le compte chromium ne peut ainsi pas contourner les règles de `Downloads`, zone hostile pour le sélecteur de fichiers). `/srv/chromium-sbx/Downloads` (2770, ACL `u:timothe:rwx` et ACL par défaut pour timothe, l'utilisateur et le groupe chromium) garde son propre propriétaire `chromium:chromium`. La session accède à **ce seul dossier** (et à `Envois`, voir « Sélecteur de fichiers »). Le tout est hors du home de chromium : donner à la session le droit de traverser `/var/lib/chromium-sbx` exposerait tout sous-dossier créé avec des droits permissifs.
 
 ### L'affichage : socket Wayland « contexte de sécurité »
 `wayland-sandbox-socket` (C, `system/chromium-sbx/wayland-sandbox-socket.c`, compilé par `build.sh` avec `wayland-scanner` depuis `/usr/share/wayland-protocols/staging/security-context/security-context-v1.xml`) :
@@ -310,7 +313,7 @@ Hyprland marque alors ces clients comme sandboxés et leur retire les protocoles
 ### Le bus D-Bus : proxy filtré + relais d'authentification
 **Filtre** (`chromium-sbx-dbus.service`, `xdg-dbus-proxy` sur le socket **privé** `%t/chromium-sbx-dbus`, `UMask=0077`) :
 - autorisés : `org.freedesktop.secrets` (KeePassXC), `org.freedesktop.Notifications`, `org.freedesktop.ScreenSaver`, possession de `org.mpris.MediaPlayer2.chromium.*` ; parmi les portails, seulement `Settings` (thème), `ScreenCast` (partage d'écran), `Request`/`Session` et leurs signaux ;
-- refusés : le sélecteur de fichiers (le portail tourne sous la session et renverrait des chemins que Chromium ne peut pas lire), l'ouverture d'URL ou de fichier par les applis de la session, la capture d'écran par portail, systemd. Testé : `FileChooser`, `OpenURI`, `Screenshot` → *Access denied* ; `systemd1` → *ServiceUnknown* ; `Settings.ReadOne color-scheme` → `1` ; `ScreenCast version` → `6` ; KeePassXC répond.
+- refusés : le sélecteur de fichiers du vrai portail (il tourne sous la session et renverrait des chemins que Chromium ne peut pas lire ; ces appels sont pris en charge avant le proxy par le relais, voir « Sélecteur de fichiers »), l'ouverture d'URL ou de fichier par les applis de la session, la capture d'écran par portail, systemd. Testé : `FileChooser`, `OpenURI`, `Screenshot` → *Access denied* ; `systemd1` → *ServiceUnknown* ; `Settings.ReadOne color-scheme` → `1` ; `ScreenCast version` → `6` ; KeePassXC répond.
 
 **Bug rencontré, et pourquoi le relais.** À la connexion, un client D-Bus s'authentifie (mécanisme `EXTERNAL`) :
 - **libdbus** (la bibliothèque de Chromium, et `dbus-send`) **annonce son uid**, ici 963. `xdg-dbus-proxy` transmet cet échange tel quel au bus, qui le refuse : pour lui, la connexion vient du proxy, qui tourne sous l'uid de la session ;
@@ -325,8 +328,66 @@ Symptômes observés : erreurs *« Failed to connect to the bus: Did not receive
 ### Le son : socket PipeWire en accès restreint
 `~/.config/pipewire/pipewire-pulse.conf.d/chromium-sbx.conf` ajoute l'adresse `{ address = "unix:/run/chromium-sbx/pulse" client.access = "restricted" }`. Redéfinir `server.address` remplace la liste par défaut : `"unix:native"` y est donc répété. Pour un client `restricted`, WirePlumber attache `default_restricted_pm`, dont les permissions par défaut sont `Perm.RX` (script `client/find-default-access.lua`) : Chromium joue ses propres flux, mais ne peut ni modifier les autres flux ni régler les périphériques. Vérifié : le son fonctionne.
 
+**Piège (17/09/2026).** Ce socket est créé par le **service** `pipewire-pulse`, pas par son socket d'activation systemd : tant que le service dort, `/run/chromium-sbx/pulse` n'existe pas. `chromium-sbx-inner` ne monte le son que si le socket est déjà là (`if [[ -S $SHARED/pulse ]]`), donc un Chromium lancé juste après l'ouverture de session restait muet jusqu'à sa fermeture complète, sans message. `~/.local/bin/chromium-sbx` démarre donc `pipewire-pulse.service`, attend les trois sockets et prévient sur la sortie d'erreur si le son manque. Testé par `system/chromium-sbx/tests/test_lanceur.py`, qui remplace `/run/chromium-sbx` par un dossier temporaire dans un Bubblewrap imbriqué.
+
 ### KeePassXC, cookies et thème
 Chromium récupère sa clé de chiffrement par le bus filtré : la **même entrée « Chromium Safe Storage »** que l'ancien profil. Les cookies `v11` du profil migré restent donc lisibles, et la session reste connectée aux sites. Le thème sombre vient du portail `Settings` (`org.freedesktop.appearance color-scheme`).
+
+### Sélecteur de fichiers (17/09/2026)
+**Problème.** Joindre un fichier, envoyer un fichier sur un site, « Enregistrer sous » : aucune fenêtre ne s'ouvrait. Dans le code de Chromium 153, la fenêtre de sélection passe toujours par le portail XDG ; Chromium ne revient à sa fenêtre GTK que si la version du portail est inférieure à 3. Cette version est lue par `Properties.Get("org.freedesktop.portal.FileChooser", "version")`, que le proxy autorise. Chromium appelait donc `OpenFile`, refusé par le proxy, et annulait sans rien afficher. Autoriser le vrai portail ne suffirait pas : il tourne sous la session et répond avec des chemins que le compte chromium ne peut pas lire.
+
+**Fonctionnement.** `dbus-uid-relay --filechooser ~/.local/bin/chromium-sbx-fichiers` découpe le flux D-Bus en messages. Il répond lui-même aux appels `FileChooser.OpenFile` et `SaveFile`, et transmet tout le reste octet pour octet :
+1. il répond aussitôt avec le chemin de requête que Chromium attend (`/org/freedesktop/portal/desktop/request/<nom unique>/<handle_token>`). Au plus **2 sélections en cours** par connexion : au-delà, la demande reçoit son chemin de requête puis un échec immédiat, sans fenêtre, pour qu'un Chromium compromis ne noie pas l'écran de fenêtres zenity et pinentry ;
+2. `OpenFile` : `chromium-sbx-fichiers ouvrir [--multiple] [--dossier]` :
+   - demande le mot de passe maître (`keepass-tokens verifier chromium`, sans nouvelle demande pendant 10 min après la dernière utilisation) ;
+   - ouvre `zenity --file-selection` sous la session, en ignorant le titre et le dossier de départ proposés par Chromium ;
+   - vérifie les choix, puis copie les fichiers dans `/srv/chromium-sbx/Envois/<id>/<n>/`. Un fichier déjà choisi **dans les téléchargements de Chromium** n'est pas copié : Chromium l'a écrit lui-même et y a déjà accès (voir « Refus ») ;
+3. `SaveFile` : `chromium-sbx-fichiers enregistrer <nom>` renvoie un nom libre dans le `~/Downloads` du sandbox (`/var/lib/chromium-sbx/Downloads`, monté depuis `/srv/chromium-sbx/Downloads`, où la session retrouve le fichier), sans fenêtre ni mot de passe ;
+4. le relais envoie le signal `Response` **sous le nom unique du vrai portail**, obtenu par `GetNameOwner`, car Chromium n'accepte la réponse que de lui. `Request.Close` (onglet fermé pendant la sélection) arrête le programme.
+
+**Copies.**
+- `Envois` appartient à la session, avec le groupe chromium et le mode 2750 : la session écrit, Chromium lit. Le dossier est monté en lecture seule dans le sandbox.
+- Chaque copie est supprimée 1 h après la sélection (minuteur `systemd-run --user`). `chromium-sbx-fichiers purger` retire les restes au démarrage du relais et à chaque sélection.
+- **Piège évité.** La session n'est pas membre du groupe chromium, et le noyau retire le bit setgid quand un non-membre fait un chmod. Les dossiers de copie sont donc créés sans mode, et le chmod ne vient qu'après la copie. Un contrôle vérifie ensuite le groupe de tout ce qui a été copié.
+
+**Refus.** Toute la sélection est refusée, avec la raison dans une fenêtre, si elle contient l'un de ces éléments :
+- `~/.ssh`, `~/.gnupg` ;
+- le fichier clé, la base et la config KeePassXC, la phrase anti-hameçonnage ;
+- les trousseaux, les jetons des agents, les profils de navigateurs et de messageries ;
+- les identifiants d'outils : `~/.pki`, `~/.aws`, `~/.kube`, `~/.docker`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh`, `~/.config/rclone` ;
+- l'historique du shell (`~/.zsh_history`, `~/.bash_history`) ;
+- `$XDG_RUNTIME_DIR`, tout `*.kdbx` ;
+- un dossier qui contient l'un d'eux ou un fichier spécial ;
+- un chemin **relatif** : la sortie de zenity est coupée à chaque saut de ligne, et un fichier nommé `facture.pdf\n.zsh_history` produirait un second morceau résolu depuis le dossier courant du service.
+- **mode simple** (sans `--multiple`, un seul chemin attendu) : si zenity en rend quand même plusieurs, toute la sélection est refusée avant toute résolution — même famille d'attaque par saut de ligne dans le nom, fermée aussi dans le cas courant d'un seul fichier.
+
+**Téléchargements de Chromium : zone hostile.** Chromium écrit ce qu'il veut dans `/srv/chromium-sbx/Downloads`, liens symboliques compris. Le chemin rendu par la fenêtre de sélection est donc comparé avant et après `realpath` : un lien qui **sort** des téléchargements (par exemple `facture.pdf` -> `~/.zsh_history`) fait tout refuser, comme un lien de ton home qui **y mène**. Ce qui vient des téléchargements et y reste n'est pas copié : le chemin est renvoyé tel quel (`/var/lib/chromium-sbx/Downloads/...`), ce qui supprime aussi toute course entre le contrôle et la copie.
+
+Dans un dossier copié, les liens symboliques sont copiés tels quels, sans être suivis. Au-delà de 1 Gio (ce qui sera copié), une confirmation est demandée.
+
+| Qui | Peut | Limite |
+|---|---|---|
+| Chromium compromis | ouvrir des demandes de sélection | chaque demande affiche une fenêtre ; sans choix de ta part, rien n'est copié |
+| Chromium compromis | imposer un titre ou un dossier de départ trompeur | ignorés |
+| Chromium compromis | lire les fichiers d'origine, choisir à ta place | impossible : autre compte, ni clavier ni souris virtuels (contexte Wayland) |
+| Chromium compromis | piéger ses téléchargements (lien vers un secret, nom avec saut de ligne) | toute la sélection est refusée (voir ci-dessus) |
+| Chromium compromis | multiplier les demandes pour noyer l'écran de fenêtres | 2 sélections en cours au plus par connexion |
+| page web | imiter la fenêtre du mot de passe dans l'onglet | elle ne connaît pas la phrase anti-hameçonnage (§5) |
+| toi, par erreur | choisir un secret | liste de refus ci-dessus |
+
+**Tests.**
+- **Automatiques** (`system/chromium-sbx/tests`) : bus D-Bus privé, faux portail et client `dbus-python`, qui repose sur libdbus comme Chromium. Ils couvrent :
+  - la transmission inchangée : gros messages, plusieurs messages lus d'un coup, descripteurs de fichiers ;
+  - la réponse au nom du portail, l'annulation, l'erreur, `Close`, `SaveFile`, la limite de 2 demandes en cours ;
+  - les copies, les refus, l'encodage des chemins, le renommage et la purge ;
+  - les téléchargements de Chromium : lien qui en sort ou qui y mène refusé, fichier rendu en place sans copie, sélection mixte dans le bon ordre ;
+  - le délai de 10 min et la phrase de `keepass-tokens verifier`.
+- **En conditions réelles** : `test.sh` vérifie que le compte chromium lit une copie, sous-dossier compris, sans pouvoir la modifier.
+
+**Limites.**
+- Un formulaire qui n'envoie la pièce jointe que plus d'1 h après la sélection échoue. La plupart des webmails envoient le fichier dès la sélection.
+- Après un `Close`, la fenêtre pinentry peut rester affichée jusqu'à son délai de 120 s.
+- Pendant les 10 min sans mot de passe, il faut quand même choisir le fichier.
 
 ### Tests réalisés (16/09/2026)
 | Vérification | Résultat |
@@ -353,16 +414,16 @@ Chromium récupère sa clé de chiffrement par le bus filtré : la **même entr�
 - **root lit tout.** Or `sudo -i` avec le mot de passe de la session donne root, puis le compte chromium. Le fermer demanderait `Defaults rootpw` (mot de passe root rangé dans KeePassXC).
 - **Une session compromise contrôle les sockets de passage** (elle possède `/run/chromium-sbx`). Elle peut s'interposer sur l'affichage et le son pendant l'utilisation (voir et taper), et demander à KeePassXC la clé des cookies. Mais elle **ne lit ni le profil au repos ni la mémoire de Chromium**.
 - Les applications de la session peuvent toujours capturer l'écran, donc ce qu'affiche Chromium.
-- Chromium ne voit plus le home de la session : envois et téléchargements passent par `/srv/chromium-sbx/Downloads`.
+- Chromium ne voit plus le home de la session : les téléchargements vont dans `/srv/chromium-sbx/Downloads`, les envois passent par le sélecteur de fichiers (copies dans `/srv/chromium-sbx/Envois`).
 - Les extensions à hôte natif (vicinae, KeePassXC-Browser) ne fonctionnent pas ; Proton Pass, si.
 - OpenSnitch voit un nouveau compte : les autorisations sont redemandées.
 - Non testés : partage d'écran et micro à travers le relais et le socket son restreint.
 
 ### Maintenance
 - **Partie root** : sources dans `system/chromium-sbx/` (dépôt chezmoi, non déployé). Après modification du lanceur interne, des sudoers, de tmpfiles ou de `wayland-sandbox-socket.c` : `./build.sh`, puis `sudo ./install.sh` (idempotent).
-- **Fichiers de session**, gérés par chezmoi : `~/.local/bin/chromium-sbx`, `~/.local/bin/dbus-uid-relay`, `~/.config/systemd/user/chromium-sbx-{wayland,dbus,dbus-relay}.service`, `~/.config/pipewire/pipewire-pulse.conf.d/chromium-sbx.conf`. Après modification : `systemctl --user daemon-reload`, et `systemctl --user restart pipewire-pulse` pour la config son.
+- **Fichiers de session**, gérés par chezmoi : `~/.local/bin/chromium-sbx`, `~/.local/bin/dbus-uid-relay`, `~/.local/bin/chromium-sbx-fichiers`, `~/.config/systemd/user/chromium-sbx-{wayland,dbus,dbus-relay}.service`, `~/.config/pipewire/pipewire-pulse.conf.d/chromium-sbx.conf`. Après modification : `systemctl --user daemon-reload`, et `systemctl --user restart pipewire-pulse` pour la config son.
 - **Agir sur le compte** (inspecter le profil, etc.) : `keepass-tokens sudo chromium <commande>`.
-- **Revérifier l'ensemble** : `system/chromium-sbx/test.sh`, depuis un terminal normal (pas depuis un agent sandboxé : sudo y est impossible).
+- **Revérifier l'ensemble** : `system/chromium-sbx/test.sh`, depuis un terminal normal (pas depuis un agent sandboxé : sudo y est impossible). Tests automatiques du relais et du sélecteur, possibles aussi depuis un agent : `cd system/chromium-sbx && CHROMIUM_FICHIERS_BIN=~/.local/bin python3 -m unittest discover -s tests -v`.
 
 ---
 
@@ -374,7 +435,7 @@ Chromium récupère sa clé de chiffrement par le bus filtré : la **même entr�
 ### Ce que voit un agent
 - **Tout le système de fichiers de l'hôte** (`--dev-bind / /`), puis :
   - **en lecture seule**, ce qui s'exécute plus tard hors sandbox, pour qu'un agent ne se ménage pas de porte de sortie : `~/.zshrc`, `~/.zprofile`, `~/.zshenv`, `~/.zlogin`, `~/.zlogout`, `~/.profile`, `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`, `~/.oh-my-zsh`, `~/.gitconfig`, **`~/.config` en entier** (Hyprland, systemd, kitty…), `~/.local/bin`, `~/.local/share/applications`, `~/.local/share/chezmoi`, `~/.local/share/claude` ;
-  - **masqués** (dossier → tmpfs vide, fichier → fichier vide), appliqués après la lecture seule : `~/.ssh`, `~/.gnupg`, le fichier clé KeePassXC `~/Documents/KeePass`, `~/.local/share/secure-profiles`, `~/.config/{keepassxc,chromium,mozilla,discord,vesktop,equibop,legcord,Vencord,Equicord,BetterDiscord,spotify}` ; pour agy, `~/.claude` et `~/.claude.json` ; pour claude, `~/.gemini`.
+  - **masqués** (dossier → tmpfs vide, fichier → fichier vide), appliqués après la lecture seule : `~/.ssh`, `~/.gnupg`, le fichier clé KeePassXC `~/Documents/KeePass`, `~/.local/share/secure-profiles`, `~/.config/{keepassxc,keepass-tokens,chromium,mozilla,discord,vesktop,equibop,legcord,Vencord,Equicord,BetterDiscord,spotify}`, `~/.zsh_history` et `~/.bash_history` (la phrase anti-hameçonnage a pu y passer) ; pour agy, `~/.claude` et `~/.claude.json` ; pour claude, `~/.gemini`.
 - **`$XDG_RUNTIME_DIR` vide** (tmpfs `0700`) : ni IPC Hyprland, ni `systemd --user`, ni agents SSH/GPG, ni Wayland/PipeWire, ni caches de tokens. Seuls y sont montés un bus D-Bus filtré (`xdg-dbus-proxy` par lancement : `org.freedesktop.Notifications` et `org.freedesktop.portal.*`) et, pour agy, son token en RAM (`--expose`).
 - **Bus système masqué** (`/run/dbus/system_bus_socket` → `/dev/null`).
 - **`/tmp` privé** : `/tmp` contenait le socket de KeePassXC, celui de l'interface OpenSnitch (`osui.sock`) et les sockets X11.

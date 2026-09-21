@@ -10,6 +10,8 @@
 #
 # - Profil et données : /var/lib/chromium-sbx (0700, compte chromium)
 # - Téléchargements : /srv/chromium-sbx/Downloads, partagé avec la session par ACL
+# - Envois : /srv/chromium-sbx/Envois, en lecture seule, au même chemin : copies des fichiers
+#   choisis dans la fenêtre de sélection de la session (dbus-uid-relay --filechooser)
 # - Affichage, bus D-Bus filtré et son : sockets préparés par la session dans
 #   /run/chromium-sbx (dossier setgid chromium). Le socket Wayland est un contexte de
 #   sécurité Hyprland : ni capture d'écran, ni clavier virtuel, ni presse-papiers global.
@@ -21,6 +23,7 @@ umask 077
 SBX_HOME=/var/lib/chromium-sbx
 SHARED=/run/chromium-sbx
 DOWNLOADS=/srv/chromium-sbx/Downloads
+ENVOIS=/srv/chromium-sbx/Envois   # copies préparées par chromium-sbx-fichiers (session)
 RUN=/run/chromium   # $XDG_RUNTIME_DIR dans le sandbox
 
 if [[ $(id -un) != chromium ]]; then
@@ -39,6 +42,10 @@ for s in wayland bus; do
         exit 1
     fi
 done
+if [[ ! -d $ENVOIS ]]; then
+    echo "chromium-sbx-inner : $ENVOIS absent, relancer sudo ./install.sh" >&2
+    exit 1
+fi
 mkdir -p "$SBX_HOME/.config/chromium" "$SBX_HOME/.tmp" "$SBX_HOME/Downloads"
 
 args=(
@@ -59,6 +66,7 @@ args=(
     --bind "$SBX_HOME/.tmp" /tmp          # partagé entre lancements : un 2e lancement passe l'URL au Chromium ouvert
     --bind "$SBX_HOME" "$SBX_HOME"
     --bind "$DOWNLOADS" "$SBX_HOME/Downloads"
+    --ro-bind "$ENVOIS" "$ENVOIS"
     --perms 0700 --dir "$RUN"
     --ro-bind "$SHARED/wayland" "$RUN/wayland-0"
     --ro-bind "$SHARED/bus" "$RUN/bus"

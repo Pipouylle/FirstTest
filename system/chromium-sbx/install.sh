@@ -8,8 +8,12 @@
 #   dans KeePassXC)
 # - /usr/local/bin/{wayland-sandbox-socket,chromium-sbx-inner}, appartenant à root
 # - /run/chromium-sbx (tmpfiles) : dossier de passage des sockets, setgid chromium
+# - /srv/chromium-sbx (root:root, 0755) : traversée seulement, pour qu'aucun des deux comptes
+#   ne puisse renommer ou remplacer les sous-dossiers ci-dessous
 # - /srv/chromium-sbx/Downloads : téléchargements, partagés avec la session par ACL
 #   (la session n'obtient AUCUN autre droit sur le compte chromium)
+# - /srv/chromium-sbx/Envois (2750, session:chromium) : copies des fichiers envoyés à
+#   Chromium par le sélecteur de fichiers ; la session écrit, Chromium lit
 # - /etc/sudoers.d/chromium-sbx : lancer Chromium sans mot de passe, le reste avec le
 #   mot de passe du compte chromium
 # ==============================================================================
@@ -47,10 +51,18 @@ chmod 644 /etc/tmpfiles.d/chromium-sbx.conf
 systemd-tmpfiles --create /etc/tmpfiles.d/chromium-sbx.conf
 
 echo "==> téléchargements partagés /srv/chromium-sbx/Downloads"
-install -d -o chromium -g chromium -m 750 /srv/chromium-sbx
+# root:root 755 : traversée pour la session et pour chromium, sans droit d'écriture pour aucun
+# des deux ; le compte chromium ne peut donc ni renommer ni remplacer Downloads ou Envois. Les
+# deux sous-dossiers gardent leurs propres propriétaires et modes : Downloads 2770 chromium:chromium
+# avec ses ACL, Envois 2750 session:chromium (voir plus bas).
+install -d -o root -g root -m 755 /srv/chromium-sbx
 install -d -o chromium -g chromium -m 2770 /srv/chromium-sbx/Downloads
-setfacl -m "u:$SESSION_USER:x" /srv/chromium-sbx
 setfacl -m "u:$SESSION_USER:rwx,d:u:$SESSION_USER:rwx,d:u:chromium:rwx,d:g:chromium:rwx" /srv/chromium-sbx/Downloads
+
+echo "==> copies envoyées à Chromium /srv/chromium-sbx/Envois"
+# Bit setgid : ce que la session y crée prend le groupe chromium. Pas d'ACL par défaut, pour
+# que Chromium n'y ait jamais plus que la lecture.
+install -d -o "$SESSION_USER" -g chromium -m 2750 /srv/chromium-sbx/Envois
 
 echo "==> flags Chromium du compte (chiffrement via KeePassXC)"
 install -d -o chromium -g chromium -m 700 /var/lib/chromium-sbx/.config

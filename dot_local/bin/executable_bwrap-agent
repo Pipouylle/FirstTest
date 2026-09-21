@@ -14,7 +14,8 @@
 #   - lecture seule : ce qui s'exécute plus tard hors sandbox (shell, ~/.config dont
 #     Hyprland et systemd, ~/.local/bin, lanceurs, chezmoi, oh-my-zsh, git, claude),
 #     pour que l'agent ne puisse pas se ménager une porte de sortie
-#   - masqués : SSH, GPG, fichier clé KeePassXC, config KeePassXC (clé KeeShare),
+#   - masqués : SSH, GPG, fichier clé KeePassXC, config KeePassXC (clé KeeShare), phrase
+#     anti-hameçonnage de keepass-tokens,
 #     profils de navigateurs et de messageries, config de l'autre agent
 # - $XDG_RUNTIME_DIR vide : ni IPC Hyprland, ni systemd --user, ni agents SSH/GPG,
 #   ni Wayland/PipeWire, ni caches de tokens ; seulement un bus D-Bus filtré
@@ -60,10 +61,11 @@ READONLY=(
 HIDDEN=(
     "$HOME/.ssh" "$HOME/.gnupg" "$HOME/Documents/KeePass"
     "$HOME/.local/share/secure-profiles"
-    "$HOME/.config/keepassxc" "$HOME/.config/chromium" "$HOME/.config/mozilla"
+    "$HOME/.config/keepassxc" "$HOME/.config/keepass-tokens" "$HOME/.config/chromium" "$HOME/.config/mozilla"
     "$HOME/.config/discord" "$HOME/.config/vesktop" "$HOME/.config/equibop" "$HOME/.config/legcord"
     "$HOME/.config/Vencord" "$HOME/.config/Equicord" "$HOME/.config/BetterDiscord"
     "$HOME/.config/spotify"
+    "$HOME/.zsh_history" "$HOME/.bash_history"   # phrase anti-hameçonnage tapée par erreur, secrets
 )
 case $APP in   # config et identifiants de l'autre agent
     agy)    HIDDEN+=("$HOME/.claude" "$HOME/.claude.json") ;;

@@ -2,7 +2,7 @@
 # ==============================================================================
 # test.sh : vérifie l'installation de chromium-sbx. À lancer dans le terminal de session,
 # PAS depuis un agent sandboxé (bwrap-agent bloque sudo et systemd).
-# Ouvre une fenêtre de mot de passe KeePassXC (accès au compte chromium) et lance
+# Ouvre deux fenêtres de mot de passe KeePassXC (accès au compte chromium) et lance
 # Chromium sur about:blank (nouvel onglet si Chromium est déjà ouvert).
 # ==============================================================================
 set -u
@@ -37,8 +37,8 @@ keepass-tokens sudo chromium sh -c '
       f=\$(dbus-send --session --print-reply --dest=org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.OpenURI.OpenURI string: string:x 2>&1)
       case \"\$f\" in *ccess*denied*|*AccessDenied*) echo \"  OK     portail OpenURI refusé\";; *) echo \"  ÉCHEC  OpenURI non refusé : \$f\";; esac
     "
-  stat -c "  info   profil : %A %U:%G %n" /var/lib/chromium-sbx /var/lib/chromium-sbx/.config/chromium 2>/dev/null
-'
+  stat -c "  info   profil : %A %U:%G %n" /var/lib/chromium-sbx /var/lib/chromium-sbx/.config/chromium 2>/dev/null; true
+' || ko "vérification en tant que chromium impossible (mot de passe annulé ?)"
 
 echo "=== 4. Lancement de Chromium ==="
 chromium-sbx about:blank >/dev/null 2>&1 &
@@ -68,3 +68,59 @@ if [[ -d ~/.local/share/secure-profiles/chromium || -d ~/.config/chromium ]]; th
 else
     ok "aucune ancienne copie du profil dans ton home"
 fi
+
+echo "=== 6. Sélecteur de fichiers ==="
+R=/srv/chromium-sbx
+attendu_r="root:root 755"
+if [[ $(stat -c '%U:%G %a' "$R" 2>/dev/null) == "$attendu_r" ]]; then ok "$R : $attendu_r"; else ko "$R : $(stat -c '%U:%G %a' "$R" 2>&1) (attendu : $attendu_r)"; fi
+E=/srv/chromium-sbx/Envois
+attendu="$(id -un):chromium 2750"
+if [[ $(stat -c '%U:%G %a' "$E" 2>/dev/null) == "$attendu" ]]; then ok "$E : $attendu"; else ko "$E : $(stat -c '%U:%G %a' "$E" 2>&1) (attendu : $attendu)"; fi
+if grep -qF -- '--ro-bind "$ENVOIS" "$ENVOIS"' /usr/local/bin/chromium-sbx-inner; then ok "lanceur interne installé : Envois monté en lecture seule"; else ko "lanceur interne installé sans Envois : relancer sudo ./install.sh"; fi
+# Le relais qui tourne, pas l'unité : un relais démarré avant la mise à jour n'a pas l'option
+pid=$(systemctl --user show -p MainPID --value chromium-sbx-dbus-relay 2>/dev/null)
+if [[ ${pid:-0} -le 0 ]]; then
+    ko "relais arrêté : impossible de vérifier --filechooser (systemctl --user start chromium-sbx-dbus-relay)"
+elif tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q -- --filechooser; then
+    ok "relais lancé avec --filechooser (pid $pid)"
+else
+    ko "relais sans --filechooser : systemctl --user daemon-reload && systemctl --user restart chromium-sbx-dbus-relay"
+fi
+t=$(mktemp -d)
+mkdir -p "$t/dossier/sous-dossier"
+echo "test chromium-sbx" > "$t/dossier/sous-dossier/essai.txt"
+if u=$(chromium-sbx-fichiers copier "$t/dossier"); then
+    f=${u#file://}/sous-dossier/essai.txt
+    id=${u#file://$E/}
+    id=${id%%/*}
+    ok "copie préparée : ${u#file://}"
+    keepass-tokens sudo chromium sh -c "
+      if [ \"\$(cat '$f' 2>/dev/null)\" = 'test chromium-sbx' ]; then echo '  OK     le compte chromium lit la copie (sous-dossier compris)'; else echo '  ÉCHEC  le compte chromium ne lit pas $f'; fi
+      if [ ! -f '$f' ]; then echo '  ÉCHEC  copie absente : $f'; elif ( echo x >> '$f' ) 2>/dev/null; then echo '  ÉCHEC  le compte chromium peut modifier la copie'; else echo '  OK     copie en lecture seule pour le compte chromium'; fi
+    " || ko "vérification en tant que chromium impossible (mot de passe annulé ?)"
+    chromium-sbx-fichiers supprimer "$id"
+else
+    ko "chromium-sbx-fichiers copier a échoué"
+fi
+rm -rf "$t"
+if [[ -s ~/.config/keepass-tokens/phrase ]]; then
+    if bwrap-agent claude -- true >/dev/null 2>&1; then
+        if bwrap-agent claude -- test -e ~/.config/keepass-tokens/phrase >/dev/null 2>&1; then ko "phrase anti-hameçonnage lisible depuis bwrap-agent"; else ok "phrase anti-hameçonnage invisible depuis bwrap-agent"; fi
+    else
+        ko "bwrap-agent inutilisable : impossible de vérifier la phrase anti-hameçonnage"
+    fi
+else
+    ko "pas de phrase anti-hameçonnage : crée ~/.config/keepass-tokens/phrase"
+fi
+
+echo "=== 7. À vérifier à la main dans Chromium ==="
+cat <<'TXT'
+  - Gmail : joindre un fichier (fenêtre de mot de passe avec ta phrase, puis sélection)
+  - joindre plusieurs fichiers ; envoyer un dossier (ex. Proton Drive)
+  - annuler au mot de passe, puis à la sélection : rien n'est joint
+  - choisir un fichier de ~/.ssh : envoi refusé, avec la raison
+  - Ctrl+S sur une page : fichier dans /srv/chromium-sbx/Downloads
+  - joindre un fichier déjà téléchargé par Chromium (Downloads) : envoyé sans copie dans Envois
+  - 2e pièce jointe dans les 10 min : pas de mot de passe
+  - toujours bon : thème sombre, connexions aux sites, KeePassXC sollicité au lancement
+TXT

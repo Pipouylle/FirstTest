@@ -2,8 +2,9 @@
 # ==============================================================================
 # chromium-sbx : lance Chromium sous le compte dédié « chromium » (lanceur de session).
 # Démarre les sockets que Chromium utilisera dans /run/chromium-sbx (services systemd
-# utilisateur : chromium-sbx-wayland, et chromium-sbx-dbus-relay qui démarre aussi
-# chromium-sbx-dbus), puis passe la main à /usr/local/bin/chromium-sbx-inner via sudo,
+# utilisateur : chromium-sbx-wayland, chromium-sbx-dbus-relay qui démarre aussi
+# chromium-sbx-dbus, et pipewire-pulse pour le son), puis passe la main à
+# /usr/local/bin/chromium-sbx-inner via sudo,
 # sans mot de passe pour cette seule commande.
 # Le profil vit dans /var/lib/chromium-sbx : ni ce script ni aucun programme de la
 # session ne peuvent le lire.
@@ -11,9 +12,18 @@
 set -euo pipefail
 
 systemctl --user start chromium-sbx-wayland.service chromium-sbx-dbus-relay.service
+# Le son : /run/chromium-sbx/pulse est créé par le SERVICE pipewire-pulse, pas par son socket
+# d'activation. Il faut donc le démarrer explicitement : sinon, Chromium lancé tôt après
+# l'ouverture de session (avant qu'une appli ait réveillé pipewire-pulse) ne trouve pas le
+# socket, et chromium-sbx-inner ne le monte pas — Chromium reste muet jusqu'à sa fermeture
+# complète. Un échec ici ne doit pas empêcher le lancement.
+systemctl --user start pipewire-pulse.service || true
 for _ in $(seq 1 50); do
-    [[ -S /run/chromium-sbx/wayland && -S /run/chromium-sbx/bus ]] && break
+    [[ -S /run/chromium-sbx/wayland && -S /run/chromium-sbx/bus && -S /run/chromium-sbx/pulse ]] && break
     sleep 0.1
 done
+if [[ ! -S /run/chromium-sbx/pulse ]]; then
+    echo "chromium-sbx : socket son absent (pipewire-pulse) : Chromium démarre sans son" >&2
+fi
 
 exec sudo -n -u chromium /usr/local/bin/chromium-sbx-inner "$@"

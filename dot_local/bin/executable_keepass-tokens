@@ -10,10 +10,15 @@
 #   keepass-tokens agy [args]      lance agy (fonction agy du .zshrc)
 #   keepass-tokens claude [args]   lance claude (fonction claude du .zshrc)
 #   keepass-tokens set-claude      enregistre le token donné par « claude setup-token »
+#   keepass-tokens verifier <appli> vérifie le mot de passe maître pour une appli sans token
+#                                  (chromium : sélecteur de fichiers, chromium-sbx-fichiers),
+#                                  avec le même délai ; aucun secret n'est gardé
 #   keepass-tokens lock            reverrouille tout de suite les applis qui ne tournent pas
 #   keepass-tokens purge <appli>   appelé par le minuteur systemd à l'expiration
 #
 # Saisie : fenêtre PINENTRY dans une session graphique, sinon dans le terminal.
+# Chaque demande commence par la phrase de PHRASE_FILE : une fausse fenêtre (page web,
+# programme qui ne peut pas lire ce fichier) ne la connaît pas.
 # Pendant la période de déverrouillage, le token de l'appli est en clair dans
 # $XDG_RUNTIME_DIR/secrets/<appli>/ (RAM, 0600) : lisible par les programmes de ton
 # compte, comme l'était l'ancien fichier. Sur disque, il n'existe que chiffré dans la base.
@@ -36,6 +41,7 @@ ACCOUNTS_GROUP="Comptes sandbox"     # mots de passe des comptes dédiés (chrom
 UNLOCK_SECONDS=600
 PINENTRY=pinentry-gtk                # fenêtre de saisie ; vide = toujours dans le terminal
 PINENTRY_TIMEOUT=120                 # une fenêtre oubliée se ferme d'elle-même (= annulation)
+PHRASE_FILE="$HOME/.config/keepass-tokens/phrase"   # phrase anti-hameçonnage (0600, hors chezmoi)
 
 AGY_BIN="$HOME/.local/bin/agy"
 AGY_TOKEN="$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
@@ -70,8 +76,14 @@ assuan_escape() {  # protocole pinentry : %, CR et LF sont encodés
 # ask_secret <titre> <description> <invite> [erreur] : lit un secret dans $SECRET.
 # Échoue si la saisie est annulée, expire ou si ni fenêtre ni terminal ne sont disponibles.
 ask_secret() {
-    local title=$1 desc=$2 prompt=$3 error=${4:-}
+    local title=$1 desc=$2 prompt=$3 error=${4:-} phrase=""
     SECRET=""
+    [[ -r $PHRASE_FILE ]] && phrase=$(<"$PHRASE_FILE")
+    if [[ -n $phrase ]]; then
+        desc="Ta phrase : « $phrase » — si elle manque ou est fausse, n'écris rien."$'\n\n'"$desc"
+    else
+        desc+=$'\n\n'"(pas de phrase anti-hameçonnage : crée $PHRASE_FILE)"
+    fi
     if [[ -n $PINENTRY && -n ${WAYLAND_DISPLAY:-${DISPLAY:-}} ]] && command -v "$PINENTRY" >/dev/null; then
         local cmds=(
             "SETTIMEOUT $PINENTRY_TIMEOUT"
@@ -107,9 +119,10 @@ unlock() {
     KP_ERR=""
     for try in 1 2 3; do
         local desc="Mot de passe maître KeePassXC pour déverrouiller les tokens de « $app » (valable $((UNLOCK_SECONDS / 60)) min après sa dernière utilisation)"
-        if [[ $app == "compte "* ]]; then
-            desc="Mot de passe maître KeePassXC pour utiliser le $app (demandé à chaque fois)"
-        fi
+        case $app in
+            "compte "*) desc="Mot de passe maître KeePassXC pour utiliser le $app (demandé à chaque fois)" ;;
+            chromium)   desc="Mot de passe maître KeePassXC : Chromium demande un fichier (valable $((UNLOCK_SECONDS / 60)) min après la dernière utilisation)" ;;
+        esac
         if ! ask_secret "KeePassXC — $app" "$desc" "Mot de passe :" "$error" 2>/dev/null; then
             unset SECRET
             KP_ERR="saisie annulée (fenêtre fermée, délai dépassé ou terminal indisponible)"
@@ -308,7 +321,11 @@ run() {  # run <appli> <binaire> [args]
     mkdir -p "$d/pids"
     exec 9>"$d/lock"
     flock 9
-    if ! "${app}_start"; then
+    # 9>&- sur ce seul appel : pinentry (lancé par « timeout » dans agy_start/claude_start via
+    # ask_secret) survit à un arrêt brutal du parent et garderait sinon le verrou jusqu'à
+    # PINENTRY_TIMEOUT (120 s), bloquant sans rien dire la demande suivante. Le parent garde le
+    # descripteur 9 pour le flock -u qui suit et pour le trap EXIT.
+    if ! "${app}_start" 9>&-; then
         exit 1
     fi
     touch "$d/pids/$$"
@@ -336,6 +353,34 @@ run() {  # run <appli> <binaire> [args]
     else
         "${sandbox[@]}" "$bin" "$@" 9>&-
     fi
+}
+
+# verifier <appli> : réussit si le mot de passe maître est bon. Pas de nouvelle demande s'il a
+# été validé pour cette appli il y a moins de UNLOCK_SECONDS ; chaque réussite prolonge le
+# délai. Rien n'est gardé en RAM à part la date d'expiration.
+verifier() {
+    local app=$1 d="$SECRETS_DIR/$1"
+    if [[ ! $app =~ ^[a-z][a-z0-9-]*$ || $app == agy || $app == claude ]]; then
+        say "nom d'appli invalide pour verifier : $app"
+        exit 1
+    fi
+    mkdir -p "$d"
+    exec 9>"$d/lock"
+    flock 9
+    if [[ ! -s $d/expires ]] || (( $(date +%s) >= $(<"$d/expires") )); then
+        # 9>&- : pinentry est lancé par « timeout », qui survit à un Request.Close du sélecteur.
+        # S'il héritait du verrou, il le garderait jusqu'à PINENTRY_TIMEOUT et bloquerait sans
+        # rien dire la demande suivante. (schedule_lock n'a pas ce problème : systemd-run rend
+        # la main tout de suite, et le service transitoire est lancé par systemd, pas par nous.)
+        if ! unlock "$app" db-info "$DB" >/dev/null 9>&-; then
+            unset PW
+            say "accès refusé${KP_ERR:+ : $KP_ERR}"
+            exit 1
+        fi
+        unset PW
+    fi
+    schedule_lock "$app"
+    flock -u 9
 }
 
 # ------------------------------------------------------- comptes dédiés -------
@@ -390,7 +435,7 @@ fi
 
 mkdir -p "$SECRETS_DIR"
 case "${1:-}" in
-    agy|claude|set-claude|set-account|sudo)
+    agy|claude|set-claude|set-account|sudo|verifier)
         [[ -f $DB ]] || { say "base introuvable : $DB"; exit 1; }
         [[ -z $KEY_FILE || -r $KEY_FILE ]] || { say "fichier clé illisible : $KEY_FILE"; exit 1; }
         case $1 in
@@ -398,6 +443,7 @@ case "${1:-}" in
             claude)      shift; run claude "$CLAUDE_BIN" "$@" ;;
             set-claude)  set_claude ;;
             set-account) set_account "${2:?compte manquant (ex. chromium)}" ;;
+            verifier)    verifier "${2:?appli manquante (ex. chromium)}" ;;
             sudo)
                 account=${2:?compte manquant (ex. chromium)}
                 shift 2
@@ -408,7 +454,7 @@ case "${1:-}" in
                 KEEPASS_TOKENS_ASKPASS=$account SUDO_ASKPASS=$SELF exec sudo -A -u "$account" -- "$@" ;;
         esac ;;
     lock)
-        for app in agy claude; do
+        for app in agy claude chromium; do
             [[ -d $SECRETS_DIR/$app ]] || continue
             if others_running "$app"; then
                 say "$app tourne encore : il sera reverrouillé $UNLOCK_SECONDS s après sa sortie"
@@ -421,6 +467,6 @@ case "${1:-}" in
     purge)
         purge "${2:?appli manquante}" ;;
     *)
-        echo "Usage : keepass-tokens {agy|claude|set-claude|set-account <compte>|sudo <compte> <commande>|lock} [arguments]" >&2
+        echo "Usage : keepass-tokens {agy|claude|set-claude|set-account <compte>|sudo <compte> <commande>|verifier <appli>|lock} [arguments]" >&2
         exit 1 ;;
 esac

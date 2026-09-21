@@ -29,6 +29,7 @@ PACMAN=(
   # système (README §4), sécurité et outillage
   zram-generator earlyoom power-profiles-daemon python-gobject git base-devel chezmoi
   timeshift keepassxc opensnitch firejail
+  xdg-dbus-proxy bubblewrap pinentry python-jeepney zenity   # sandboxes, mots de passe, sélecteur de fichiers de Chromium
 )
 AUR=(
   # caelestia : le shell tourne depuis ~/.config/quickshell/caelestia (chezmoi), mais

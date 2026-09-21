@@ -1,0 +1,359 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# chromium-sbx-fichiers : sélecteur de fichiers de Chromium (compte chromium), côté session.
+# Chromium ne voit pas ton home : quand il demande un fichier (portail FileChooser),
+# dbus-uid-relay --filechooser appelle ce script, qui lui donne une COPIE des fichiers choisis.
+#
+#   ouvrir [--multiple] [--dossier]  mot de passe maître KeePassXC (keepass-tokens verifier
+#                                    chromium : pas de nouvelle demande pendant 10 min), fenêtre
+#                                    de sélection, refus des chemins sensibles, confirmation
+#                                    au-delà de CONFIRM_BYTES, copie ; écrit les chemins file://
+#   copier <chemin>...               mêmes contrôles et même copie, sans mot de passe ni fenêtre
+#                                    (tests, test.sh ; la session peut déjà écrire dans ENVOIS)
+#   enregistrer <nom proposé>        chemin libre dans les téléchargements partagés, sans fenêtre
+#   supprimer <id>                   supprime une copie (minuteur systemd, TTL après la copie)
+#   purger                           supprime les copies de plus de TTL secondes
+#
+# Codes de sortie : 0 réussi, 1 annulé ou refusé, 2 erreur.
+# Ce qui vient déjà des téléchargements de Chromium ($DOWNLOADS) n'est pas copié : le chemin est
+# rendu tel quel (vu par Chromium), et tout lien qui entre ou sort de ce dossier fait tout refuser.
+# Copies : $ENVOIS/<id>/<n>/<nom>. ENVOIS appartient à la session, groupe chromium, setgid :
+# ce qui y est créé prend le groupe chromium, lisible dans le sandbox (monté en lecture seule).
+# Réglages remplaçables par CSF_<NOM> (tests) : l'environnement du relais vient de la session.
+# ==============================================================================
+set -uo pipefail
+umask 077
+
+ENVOIS=${CSF_ENVOIS:-/srv/chromium-sbx/Envois}
+DOWNLOADS=${CSF_DOWNLOADS:-/srv/chromium-sbx/Downloads}              # vu par la session
+SBX_DOWNLOADS=${CSF_SBX_DOWNLOADS:-/var/lib/chromium-sbx/Downloads}  # même dossier, vu par Chromium
+TTL=${CSF_TTL:-3600}                            # durée de vie d'une copie (s)
+CONFIRM_BYTES=${CSF_CONFIRM_BYTES:-1073741824}  # confirmation au-delà de 1 Gio
+PICKER_TIMEOUT=${CSF_PICKER_TIMEOUT:-600}       # fenêtre de sélection oubliée = annulation
+KEEPASS_TOKENS=${CSF_KEEPASS_TOKENS:-$HOME/.local/bin/keepass-tokens}
+ZENITY=${CSF_ZENITY:-zenity}
+SYSTEMD_RUN=${CSF_SYSTEMD_RUN:-systemd-run}
+STATE="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR non défini}/chromium-sbx-fichiers"
+
+# Jamais envoyés à Chromium : ni eux, ni ce qu'ils contiennent, ni un dossier qui les contient
+SENSIBLES=(
+    "$HOME/.ssh" "$HOME/.gnupg" "$HOME/Documents/KeePass" "$HOME/Mots de passe.kdbx"
+    "$HOME/.config/keepassxc" "$HOME/.cache/keepassxc" "$HOME/.config/keepass-tokens"
+    "$HOME/.local/share/keyrings" "$HOME/.local/share/secure-profiles"
+    "$HOME/.claude" "$HOME/.claude.json" "$HOME/.gemini"
+    "$HOME/.config/chromium" "$HOME/.config/mozilla" "$HOME/.mozilla"
+    "$HOME/.config/discord" "$HOME/.config/vesktop" "$HOME/.config/equibop" "$HOME/.config/legcord"
+    "$HOME/.config/Vencord" "$HOME/.config/Equicord" "$HOME/.config/BetterDiscord"
+    "$HOME/.config/spotify"
+    "$HOME/.pki" "$HOME/.aws" "$HOME/.kube" "$HOME/.docker" "$HOME/.netrc"
+    "$HOME/.git-credentials" "$HOME/.config/gh" "$HOME/.config/rclone"
+    "$HOME/.zsh_history" "$HOME/.bash_history"
+    "$XDG_RUNTIME_DIR"
+)
+SENSIBLES_REELS=()   # mêmes chemins après realpath, résolus une seule fois par exécution
+
+SELF=$(readlink -f "$0")
+say() { echo "chromium-sbx-fichiers : $*" >&2; }
+
+resoudre_sensibles() {
+    (( ${#SENSIBLES_REELS[@]} )) && return 0
+    local s
+    for s in "${SENSIBLES[@]}"; do
+        SENSIBLES_REELS+=("$(realpath -m -- "$s")")
+    done
+}
+
+uri() {  # uri <chemin> : file:// + chemin encodé en pourcent (octets hors A-Za-z0-9-._~/)
+    local LC_ALL=C s=$1 i c out=""
+    for (( i = 0; i < ${#s}; i++ )); do
+        c=${s:i:1}
+        case $c in
+            [A-Za-z0-9._~/-]) out+=$c ;;
+            *) printf -v c '%%%02X' "'$c"; out+=$c ;;
+        esac
+    done
+    printf 'file://%s\n' "$out"
+}
+
+refuser() {  # refuser <raison> : rien n'est envoyé, la raison s'affiche dans une fenêtre
+    say "refusé : $1"
+    "$ZENITY" --error --title="Chromium : envoi refusé" --no-markup \
+        --text="Rien n'a été envoyé à Chromium."$'\n\n'"$1" >/dev/null 2>&1 || true
+}
+
+# motif_refus <chemin réel> : écrit pourquoi ce chemin ne doit pas être envoyé et réussit,
+# ou échoue s'il peut l'être
+motif_refus() {
+    local p=$1 i r dedans
+    if [[ ! -f $p && ! -d $p ]]; then
+        echo "ni fichier ni dossier : $p"; return 0
+    fi
+    resoudre_sensibles
+    dedans=${p%/}/
+    for i in "${!SENSIBLES[@]}"; do
+        r=${SENSIBLES_REELS[i]}
+        if [[ $p == "$r" || $p == "${r%/}/"* ]]; then
+            echo "chemin sensible : ${SENSIBLES[i]}"; return 0
+        fi
+        if [[ -d $p && $r == "$dedans"* ]]; then
+            echo "ce dossier contient un chemin sensible : ${SENSIBLES[i]}"; return 0
+        fi
+    done
+    if [[ ${p,,} == *.kdbx ]]; then
+        echo "base KeePassXC : $p"; return 0
+    fi
+    if [[ -d $p ]]; then
+        local trouve
+        trouve=$(find "$p" \( -iname '*.kdbx' -o -type b -o -type c -o -type p -o -type s \) -print -quit 2>/dev/null)
+        if [[ -n $trouve ]]; then
+            echo "ce dossier contient une base KeePassXC ou un fichier spécial : $trouve"; return 0
+        fi
+    fi
+    return 1
+}
+
+# controler <chemin>... : chemins réels dans CHOIX, et pour chacun SORTIES : vide s'il faut le
+# copier, ou le chemin à renvoyer tel quel (téléchargements de Chromium). Refus : RAISON et échec.
+#
+# $DOWNLOADS est une zone hostile : Chromium y écrit ce qu'il veut, liens symboliques compris.
+# Le chemin rendu par le sélecteur est donc comparé AVANT et APRÈS realpath : un lien qui entre
+# ou sort de ce dossier fait refuser toute la sélection.
+controler() {
+    local chemin reel dl=${DOWNLOADS%/} dl_reel avant apres relatif
+    dl_reel=$(realpath -m -- "$DOWNLOADS"); dl_reel=${dl_reel%/}
+    # motif_refus tourne dans une substitution de commande (sous-shell) : sans cet appel ici,
+    # son propre appel à resoudre_sensibles (gardé, mais dans un sous-shell à chaque fois)
+    # reconstruirait le cache pour chaque élément choisi.
+    resoudre_sensibles
+    CHOIX=()
+    SORTIES=()
+    RAISON=""
+    for chemin in "$@"; do
+        # Le sélecteur ne rend que des chemins absolus : un morceau relatif vient d'un nom coupé
+        # à un saut de ligne, et serait résolu depuis le dossier courant du service.
+        if [[ $chemin != /* ]]; then
+            RAISON="chemin relatif inattendu (nom avec saut de ligne ?) : $chemin"
+            return 1
+        fi
+        if ! reel=$(realpath -e -- "$chemin" 2>/dev/null); then
+            RAISON="introuvable : $chemin"
+            return 1
+        fi
+        avant=0; apres=0
+        [[ $chemin == "$dl" || $chemin == "$dl"/* || $chemin == "$dl_reel" || $chemin == "$dl_reel"/* ]] && avant=1
+        [[ $reel == "$dl_reel" || $reel == "$dl_reel"/* ]] && apres=1
+        if (( avant && ! apres )); then
+            RAISON="lien qui sort des téléchargements : $chemin"
+            return 1
+        fi
+        if (( apres && ! avant )); then
+            RAISON="lien vers les téléchargements de Chromium : $chemin"
+            return 1
+        fi
+        if RAISON=$(motif_refus "$reel"); then
+            return 1
+        fi
+        CHOIX+=("$reel")
+        if (( avant )); then
+            # Chromium lit déjà ce fichier avec ses propres droits : pas de copie, donc pas non
+            # plus de course entre le contrôle et la copie. Il le voit sous $SBX_DOWNLOADS.
+            relatif=${reel#"$dl_reel"}
+            SORTIES+=("${SBX_DOWNLOADS%/}$relatif")
+        else
+            SORTIES+=("")
+        fi
+    done
+    RAISON=""
+    if (( ${#CHOIX[@]} == 0 )); then
+        RAISON="aucun fichier choisi"
+        return 1
+    fi
+}
+
+# copier_choix : copie dans $ENVOIS/<id>/<n>/ ce qui doit l'être (SORTIES vide), programme la
+# suppression, écrit les chemins dans l'ordre des choix
+copier_choix() {
+    local id dest="" i n=0 reel u uris=() copies=0
+    for i in "${!CHOIX[@]}"; do
+        [[ -z ${SORTIES[i]} ]] && copies=1
+    done
+    if (( copies )); then
+        id=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+        dest=$ENVOIS/$id
+        # Ni « mkdir -m » ni chmod avant la copie : la session n'est pas membre du groupe chromium,
+        # et le noyau retire le bit setgid quand un non-membre fait un chmod. Les fichiers copiés
+        # ensuite prendraient le groupe de la session, illisible pour Chromium.
+        if ! mkdir -- "$dest"; then
+            say "impossible de créer $dest"
+            return 2
+        fi
+    fi
+    for i in "${!CHOIX[@]}"; do
+        if [[ -n ${SORTIES[i]} ]]; then
+            uris+=("${SORTIES[i]}")   # déjà dans les téléchargements de Chromium : rien à copier
+            continue
+        fi
+        reel=${CHOIX[i]}
+        n=$((n + 1))
+        if ! mkdir -- "$dest/$n" || ! cp -R -P --preserve=timestamps -- "$reel" "$dest/$n/"; then
+            rm -rf -- "$dest"
+            say "copie impossible : $reel"
+            return 2
+        fi
+        uris+=("$dest/$n/${reel##*/}")
+    done
+    if (( copies )); then
+        chmod -R g+rX,g-w,o-rwx -- "$dest"   # après la copie : le groupe est déjà en place
+        if [[ -n $(find "$dest" ! -group "$(stat -c %g -- "$ENVOIS")" -print -quit) ]]; then
+            rm -rf -- "$dest"
+            say "groupe inattendu dans la copie (bit setgid absent sur $ENVOIS ?)"
+            return 2
+        fi
+        "$SYSTEMD_RUN" --user --quiet --collect --on-active="$TTL" --timer-property=AccuracySec=1s \
+            --unit="chromium-sbx-fichiers-$id" "$SELF" supprimer "$id" >/dev/null 2>&1 \
+            || say "minuteur systemd indisponible : copie supprimée à la prochaine purge"
+    fi
+    for u in "${uris[@]}"; do
+        uri "$u"
+    done
+}
+
+ouvrir() {
+    local multiple=0 dossier=0 arg
+    for arg in "$@"; do
+        case $arg in
+            --multiple) multiple=1 ;;
+            --dossier) dossier=1 ;;
+            *) say "option inconnue : $arg"; return 2 ;;
+        esac
+    done
+    # Un sélecteur qui ne peut pas s'afficher rendrait Chromium muet (il traite le code 2 comme
+    # une annulation) : la raison est écrite en clair dans le journal du relais.
+    local voir="voir journalctl --user -u chromium-sbx-dbus-relay"
+    if [[ -z ${WAYLAND_DISPLAY:-} && -z ${DISPLAY:-} ]]; then
+        say "sélecteur indisponible : ni WAYLAND_DISPLAY ni DISPLAY dans l'environnement du relais ; $voir"
+        return 2
+    fi
+    if ! command -v "$ZENITY" >/dev/null; then
+        say "sélecteur indisponible : $ZENITY introuvable ou non exécutable ; $voir"
+        return 2
+    fi
+    purger
+    "$KEEPASS_TOKENS" verifier chromium || return 1
+
+    local depart=$HOME/ dernier
+    if [[ -r $STATE/dernier-dossier ]]; then
+        dernier=$(<"$STATE/dernier-dossier")
+        [[ -d $dernier ]] && depart=${dernier%/}/
+    fi
+    # Titre fixe, dossier de départ choisi ici : rien ne vient de Chromium
+    local options=(--file-selection --title="Chromium : fichier à envoyer" --filename="$depart"
+                   --separator=$'\n' --timeout="$PICKER_TIMEOUT")
+    (( multiple )) && options+=(--multiple)
+    (( dossier )) && options+=(--directory)
+    local sortie ligne chemins=()
+    sortie=$("$ZENITY" "${options[@]}" 2>/dev/null) || return 1   # annulé ou délai dépassé
+    while IFS= read -r ligne; do
+        [[ -n $ligne ]] && chemins+=("$ligne")
+    done <<< "$sortie"
+    if (( ! multiple && ${#chemins[@]} > 1 )); then
+        refuser "sélection inattendue : plusieurs chemins pour un seul fichier (nom avec saut de ligne ?)"
+        return 1
+    fi
+    if ! controler "${chemins[@]}"; then
+        refuser "$RAISON"
+        return 1
+    fi
+
+    local total=0 a_copier=() i
+    for i in "${!CHOIX[@]}"; do   # ce qui reste en place ne coûte rien : hors du total
+        [[ -z ${SORTIES[i]} ]] && a_copier+=("${CHOIX[i]}")
+    done
+    if (( ${#a_copier[@]} )); then
+        total=$(du -sb -- "${a_copier[@]}" 2>/dev/null | awk '{ s += $1 } END { print s + 0 }')
+    fi
+    if (( total > CONFIRM_BYTES )); then
+        "$ZENITY" --question --title="Chromium : fichier à envoyer" --no-markup \
+            --text="$(numfmt --to=iec-i --suffix=o "$total") à copier pour Chromium. Continuer ?" \
+            >/dev/null 2>&1 || return 1
+    fi
+    if ! copier_choix; then
+        refuser "la copie a échoué (détails : journalctl --user -u chromium-sbx-dbus-relay)"
+        return 2
+    fi
+    # $DOWNLOADS est modifiable par Chromium : ne jamais y rouvrir le sélecteur par défaut.
+    # On retient le dossier parent du premier élément choisi qui n'en vient pas ; s'il n'y en a
+    # pas, l'ancienne valeur reste (pas de mkdir/écriture ici).
+    for i in "${!CHOIX[@]}"; do
+        if [[ -z ${SORTIES[i]} ]]; then
+            mkdir -p -- "$STATE"
+            dirname -- "${CHOIX[i]}" > "$STATE/dernier-dossier"
+            break
+        fi
+    done
+}
+
+copier() {
+    if ! controler "$@"; then
+        say "refusé : $RAISON"
+        return 1
+    fi
+    copier_choix
+}
+
+enregistrer() {  # enregistrer <nom proposé> : Chromium écrit lui-même le fichier à ce chemin
+    local nom=${1-}
+    nom=${nom##*/}
+    nom=$(printf '%s' "$nom" | tr -d '\000-\037\177')
+    [[ -z $nom || $nom == . || $nom == .. ]] && nom=téléchargement
+    local base=$nom ext="" candidat=$nom i=1
+    if [[ $nom == ?*.* ]]; then
+        base=${nom%.*}
+        ext=.${nom##*.}
+    fi
+    while [[ -e $DOWNLOADS/$candidat || -L $DOWNLOADS/$candidat ]]; do
+        candidat="$base ($i)$ext"
+        i=$((i + 1))
+    done
+    uri "$SBX_DOWNLOADS/$candidat"
+}
+
+supprimer() {
+    local id=${1-}
+    if [[ ! $id =~ ^[0-9a-f]{32}$ ]]; then
+        say "identifiant invalide : $id"
+        return 2
+    fi
+    rm -rf -- "${ENVOIS:?}/$id"
+}
+
+purger() {
+    [[ -d $ENVOIS ]] || return 0
+    local maintenant id reste
+    maintenant=$(date +%s)
+    find "$ENVOIS" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9a-f]{32}' \
+        ! -newermt "@$(( maintenant - TTL ))" -exec rm -rf -- {} +
+    # Les minuteurs systemd sont perdus au redémarrage : on les réarme pour ce qui survit, sinon
+    # une copie resterait jusqu'à la prochaine purge. Un minuteur déjà en place fait simplement
+    # échouer systemd-run (même nom d'unité), sans conséquence.
+    while IFS= read -r id; do
+        reste=$(( TTL - (maintenant - $(stat -c %Y -- "$ENVOIS/$id" 2>/dev/null || echo "$maintenant")) ))
+        (( reste < 1 )) && reste=1
+        # --no-block : purger tourne en ExecStartPre du relais ; un systemd-run bloquant
+        # retarderait ou ferait échouer le démarrage du relais.
+        "$SYSTEMD_RUN" --user --quiet --collect --no-block --on-active="$reste" --timer-property=AccuracySec=1s \
+            --unit="chromium-sbx-fichiers-$id" "$SELF" supprimer "$id" >/dev/null 2>&1 || true
+    done < <(find "$ENVOIS" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+                  -regex '.*/[0-9a-f]{32}' -printf '%f\n')
+}
+
+case "${1:-}" in
+    ouvrir)      shift; ouvrir "$@" ;;
+    copier)      shift; copier "$@" ;;
+    enregistrer) enregistrer "${2-}" ;;
+    supprimer)   supprimer "${2-}" ;;
+    purger)      purger ;;
+    *)
+        echo "Usage : chromium-sbx-fichiers {ouvrir [--multiple] [--dossier]|copier <chemin>...|enregistrer <nom>|supprimer <id>|purger}" >&2
+        exit 2 ;;
+esac

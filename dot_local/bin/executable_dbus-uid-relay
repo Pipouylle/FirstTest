@@ -6,21 +6,52 @@ libdbus (Chromium, dbus-send) s'annoncent avec leur propre uid (mécanisme EXTER
 le bus le refuse, puisque pour lui la connexion vient du proxy, qui tourne sous le compte
 de session. Les clients sd-bus (busctl) n'annoncent pas d'uid et passent, ce qui masque
 le problème. Ce relais termine l'authentification côté client, s'authentifie lui-même
-côté proxy, puis relaie les octets et les descripteurs de fichiers (SCM_RIGHTS) dans les
-deux sens.
+côté proxy, puis relaie les messages, découpés d'après leur en-tête mais transmis sans
+modification, et les descripteurs de fichiers (SCM_RIGHTS), dans les deux sens.
+
+--filechooser <programme> : le relais répond lui-même aux appels du portail sélecteur de
+fichiers (org.freedesktop.portal.FileChooser OpenFile et SaveFile) au lieu de les
+transmettre. Le vrai portail tourne sous le compte de session et renverrait des chemins
+que le client ne peut pas lire. Le programme (chromium-sbx-fichiers) choisit et copie les
+fichiers ; le relais renvoie le résultat sous le nom unique du vrai portail, le seul
+émetteur que le client accepte.
 
 L'accès au relais est contrôlé par les permissions de son socket (groupe chromium).
 
-Usage : dbus-uid-relay <socket d'écoute> <socket du bus (xdg-dbus-proxy)>
+Usage : dbus-uid-relay [--filechooser <programme>] <socket d'écoute> <socket du bus (xdg-dbus-proxy)>
 """
 import array
+import itertools
 import os
+import re
+import secrets
 import signal
 import socket
+import struct
+import subprocess
 import sys
 import threading
 
-MAX_FDS = 253  # limite du noyau pour SCM_RIGHTS
+from jeepney import DBusAddress, HeaderFields, MessageType, new_error, new_method_return, new_signal
+from jeepney.bus_messages import message_bus
+from jeepney.io.blocking import open_dbus_connection
+from jeepney.low_level import Message
+
+MAX_FDS = 253            # limite du noyau pour SCM_RIGHTS
+MAX_MESSAGE = 1 << 27    # taille maximale d'un message (spécification D-Bus)
+MAX_INTERCEPT = 1 << 16  # au-delà, un message n'est jamais décodé : il est transmis tel quel
+MAX_REQUESTS = 2         # sélections ouvertes en même temps, par connexion
+
+PORTAL_NAME = "org.freedesktop.portal.Desktop"
+PORTAL_PATH = "/org/freedesktop/portal/desktop"
+FILECHOOSER = "org.freedesktop.portal.FileChooser"
+REQUEST = "org.freedesktop.portal.Request"
+CHOOSER_METHODS = ("OpenFile", "SaveFile", "SaveFiles")
+_CLOSED = object()       # requête fermée par le client (Request.Close) ou connexion terminée
+
+
+def log(text):
+    print("dbus-uid-relay : " + text, file=sys.stderr, flush=True)
 
 
 def read_line(sock, buf):
@@ -86,64 +117,356 @@ def auth_client(client, guid, unix_fd):
             client.sendall(b"ERROR\r\n")
 
 
-def pump(src, dst):
-    """Relaie octets et descripteurs de fichiers de src vers dst jusqu'à la fermeture."""
+def message_size(head):
+    """Taille totale d'un message D-Bus d'après ses 16 premiers octets ; ValueError si invalide."""
+    order = {0x6C: "<", 0x42: ">"}.get(head[0])   # « l » ou « B »
+    if order is None or head[3] != 1:
+        raise ValueError("en-tête D-Bus invalide")
+    body_length, = struct.unpack_from(order + "I", head, 4)
+    fields_length, = struct.unpack_from(order + "I", head, 12)
+    size = 16 + (fields_length + 7) // 8 * 8 + body_length
+    if size > MAX_MESSAGE:
+        raise ValueError("message de %d octets, au-delà de la limite" % size)
+    return size
+
+
+def close_fds(fds):
+    for fd in fds:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def read_messages(sock, initial=b""):
+    """Produit (message complet, descripteurs reçus depuis le message précédent) jusqu'à la
+    fermeture de sock. Lève ValueError sur un en-tête invalide."""
+    buf = bytearray(initial)
+    fds = []
     try:
         while True:
-            data, ancillary, _, _ = src.recvmsg(65536, socket.CMSG_SPACE(MAX_FDS * 4),
+            while len(buf) >= 16:
+                size = message_size(buf)
+                if len(buf) < size:
+                    break
+                message = bytes(buf[:size])
+                del buf[:size]
+                received, fds = fds, []
+                yield message, received
+            data, ancillary, _, _ = sock.recvmsg(65536, socket.CMSG_SPACE(MAX_FDS * 4),
                                                  socket.MSG_CMSG_CLOEXEC)
-            if not data:
-                break
-            fds = []
             for level, kind, payload in ancillary:
                 if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
                     fds.extend(array.array("i", payload))
-            try:
-                sent = 0
-                if fds:
-                    sent = dst.sendmsg([data], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
-                                                 array.array("i", fds).tobytes())])
-                if sent < len(data):
-                    dst.sendall(data[sent:])
-            finally:
-                for fd in fds:
-                    os.close(fd)
-    except OSError:
-        pass
+            if not data:
+                return
+            buf += data
     finally:
-        for sock in (src, dst):
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
+        close_fds(fds)
 
 
-def serve(client, bus_path):
+def send_message(sock, message, fds):
+    """Envoie un message entier ; les descripteurs partent avec son premier octet."""
+    sent = 0
+    if fds:
+        sent = sock.sendmsg([message], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                         array.array("i", fds[:MAX_FDS]).tobytes())])
+    if sent < len(message):
+        sock.sendall(message[sent:])
+
+
+def shutdown(*socks):
+    for sock in socks:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
+def parse(message):
+    """Message jeepney, ou None si jeepney ne sait pas le lire (il est alors transmis tel quel)."""
+    try:
+        return Message.from_buffer(message)
+    except Exception:
+        return None
+
+
+def option(options, key, signature, default):
+    """Valeur d'une option a{sv} (jeepney : (signature, valeur)) si elle a le type attendu."""
+    value = options.get(key)
+    if isinstance(value, tuple) and len(value) == 2 and value[0] == signature:
+        return value[1]
+    return default
+
+
+def portal_owner():
+    """Nom unique du vrai portail sur le bus de session ($DBUS_SESSION_BUS_ADDRESS)."""
+    connection = open_dbus_connection(bus="SESSION")
+    try:
+        reply = connection.send_and_get_reply(message_bus.GetNameOwner(PORTAL_NAME), timeout=5)
+    finally:
+        connection.close()
+    if reply.header.message_type != MessageType.method_return:
+        raise LookupError(reply.body[0] if reply.body else "GetNameOwner a échoué")
+    return reply.body[0]
+
+
+def kill(process):
+    """Arrête un programme de sélection et son groupe de processus (zenity compris)."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+class Relay:
+    """Une connexion cliente, relayée dans les deux sens ; sélecteur de fichiers si demandé."""
+
+    def __init__(self, client, bus, chooser=None):
+        self.client = client
+        self.bus = bus
+        self.chooser = chooser                 # programme de sélection (--filechooser) ou None
+        self.client_lock = threading.Lock()    # un seul écrivain vers le client à la fois
+        self.serials = itertools.count(0x80000000)
+        self.hello_serial = None               # appel Hello du client
+        self.unique_name = None                # nom unique du client, lu dans la réponse à Hello
+        self.requests = {}                     # chemin de requête -> {"portal": nom, "process": Popen}
+        self.requests_lock = threading.Lock()
+
+    def intercept(self, message):
+        """True si le message du client est traité par le relais au lieu d'être transmis."""
+        if self.chooser is None or message[1] != MessageType.method_call.value:
+            return False
+        if len(message) > MAX_INTERCEPT:
+            return False   # appel du sélecteur toujours minuscule : pas de décodage d'un gros
+                           # message, il est transmis (le proxy le refusera)
+        if self.hello_serial is None:
+            if b"Hello" in message:
+                call = parse(message)
+                if call and call.header.fields.get(HeaderFields.member) == "Hello" \
+                        and call.header.fields.get(HeaderFields.destination) == "org.freedesktop.DBus":
+                    self.hello_serial = call.header.serial
+            return False
+        if FILECHOOSER.encode() not in message and REQUEST.encode() not in message:
+            return False
+        call = parse(message)
+        if call is None or call.header.fields.get(HeaderFields.unix_fds):
+            return False   # jamais intercepté avec des descripteurs : ils se décaleraient
+        fields = call.header.fields
+        interface = fields.get(HeaderFields.interface)
+        member = fields.get(HeaderFields.member)
+        path = fields.get(HeaderFields.path)
+        if interface == FILECHOOSER and path == PORTAL_PATH and member in CHOOSER_METHODS:
+            self.start_request(call, member)
+            return True
+        if interface == REQUEST and member == "Close":
+            return self.close_request(call, path)
+        return False
+
+    def observe(self, message):
+        """Repère le nom unique du client dans la réponse à son Hello."""
+        if self.chooser is None or self.unique_name is not None or self.hello_serial is None \
+                or message[1] != MessageType.method_return.value:
+            return
+        reply = parse(message)
+        if reply and reply.header.fields.get(HeaderFields.reply_serial) == self.hello_serial and reply.body:
+            self.unique_name = reply.body[0]
+
+    def send_to_client(self, sender, message):
+        """Envoie au client un message fabriqué par le relais, au nom de sender."""
+        message.header.fields[HeaderFields.sender] = sender
+        if self.unique_name:
+            message.header.fields[HeaderFields.destination] = self.unique_name
+        data = message.serialise(serial=next(self.serials))
+        with self.client_lock:
+            self.client.sendall(data)
+
+    def respond(self, portal, handle, code, uris):
+        """Signal Response de fin de requête, au nom du vrai portail (seul émetteur accepté)."""
+        results = {"uris": ("as", uris)} if code == 0 else {}
+        response = new_signal(DBusAddress(handle, interface=REQUEST), "Response", "ua{sv}", (code, results))
+        try:
+            self.send_to_client(portal, response)
+        except OSError:
+            pass
+
+    def start_request(self, call, member):
+        """Répond tout de suite par un chemin de requête, puis lance la sélection dans un fil."""
+        options = call.body[2] if len(call.body) == 3 else None
+        if not isinstance(options, dict):
+            self.send_to_client("org.freedesktop.DBus", new_error(
+                call, "org.freedesktop.DBus.Error.InvalidArgs", "s", ("arguments attendus : ssa{sv}",)))
+            return
+        try:
+            portal = portal_owner()
+        except Exception as err:
+            log("%s : portail introuvable : %s" % (member, err))
+            self.send_to_client("org.freedesktop.DBus", new_error(
+                call, "org.freedesktop.DBus.Error.ServiceUnknown", "s", ("portail introuvable",)))
+            return
+        sender = (self.unique_name or ":0.0")[1:].replace(".", "_")
+        token = option(options, "handle_token", "s", "")
+        if not re.fullmatch(r"[A-Za-z0-9_]+", token):
+            token = "relais_" + secrets.token_hex(8)
+        handle = "%s/request/%s/%s" % (PORTAL_PATH, sender, token)
+        with self.requests_lock:
+            while handle in self.requests:
+                handle = "%s/request/%s/relais_%s" % (PORTAL_PATH, sender, secrets.token_hex(8))
+            # Un client compromis pourrait ouvrir des fenêtres sans fin : au-delà de MAX_REQUESTS
+            # sélections en cours, la demande reçoit son chemin de requête (contrat du portail),
+            # puis tout de suite un échec, sans rien lancer.
+            trop = len(self.requests) >= MAX_REQUESTS
+            if not trop:
+                self.requests[handle] = {"portal": portal, "process": None}
+        self.send_to_client(portal, new_method_return(call, "o", (handle,)))
+        if trop:
+            log("%s : trop de demandes en cours, refusée" % member)
+            self.respond(portal, handle, 2, [])
+            return
+        # Titre, dossier de départ, filtres et fenêtre parente sont ignorés : une page ou un
+        # Chromium compromis ne doit pas pouvoir orienter la fenêtre de sélection.
+        if member == "OpenFile":
+            args = ["ouvrir"]
+            if option(options, "multiple", "b", False):
+                args.append("--multiple")
+            if option(options, "directory", "b", False):
+                args.append("--dossier")
+        elif member == "SaveFile":
+            args = ["enregistrer", option(options, "current_name", "s", "")]
+        else:
+            args = None    # SaveFiles : non pris en charge (Chromium ne l'utilise pas)
+        threading.Thread(target=self.run_chooser, args=(handle, member, args), daemon=True).start()
+
+    def choose(self, handle, member, args):
+        """Exécute le programme de sélection ; renvoie (code de Response, chemins file://)."""
+        try:
+            process = subprocess.Popen([self.chooser, *args], stdin=subprocess.DEVNULL,
+                                       stdout=subprocess.PIPE, start_new_session=True)
+        except OSError as err:
+            log("%s : %s impossible à lancer : %s" % (member, self.chooser, err))
+            return 2, []
+        with self.requests_lock:
+            request = self.requests.get(handle)
+            if request is not None:
+                request["process"] = process
+        if request is None:        # Close reçu avant le lancement
+            kill(process)
+        output, _ = process.communicate()
+        uris = [line for line in output.decode("utf-8", "replace").splitlines() if line.startswith("file://")]
+        if process.returncode == 0 and uris:
+            return 0, uris
+        if process.returncode == 1:
+            return 1, []
+        log("%s : %s a échoué (code %d)" % (member, self.chooser, process.returncode))
+        return 2, []
+
+    def run_chooser(self, handle, member, args):
+        """Fil de sélection : programme, puis signal Response au nom du vrai portail."""
+        code, uris = 2, []
+        try:
+            if args is None:
+                code = 1
+            else:
+                code, uris = self.choose(handle, member, args)
+        except Exception as err:
+            log("%s : erreur : %s" % (member, err))
+        with self.requests_lock:
+            request = self.requests.pop(handle, _CLOSED)
+        if request is _CLOSED:
+            log("%s : requête fermée par le client" % member)
+            return
+        log("%s : code %d, %d fichier(s)" % (member, code, len(uris)))
+        self.respond(request["portal"], handle, code, uris)
+
+    def close_request(self, call, path):
+        """Request.Close sur une requête du relais : arrêt de la sélection, sans Response."""
+        with self.requests_lock:
+            request = self.requests.pop(path, None)
+        if request is None:
+            return False
+        if request["process"] is not None:
+            kill(request["process"])
+        self.send_to_client(request["portal"], new_method_return(call))
+        return True
+
+    def close(self):
+        """Fin de la connexion : arrête les sélections en cours."""
+        with self.requests_lock:
+            requests = list(self.requests.values())
+            self.requests.clear()
+        for request in requests:
+            if request["process"] is not None:
+                kill(request["process"])
+
+    def upstream(self, initial):
+        """Client -> bus."""
+        pending = []
+        try:
+            for message, fds in read_messages(self.client, initial):
+                pending.extend(fds)
+                if self.intercept(message):
+                    continue   # descripteurs gardés pour le prochain message transmis
+                send_message(self.bus, message, pending)
+                close_fds(pending)
+                pending = []
+        except ValueError as err:
+            log("client déconnecté : %s" % err)
+        except OSError:
+            pass
+        finally:
+            close_fds(pending)
+            shutdown(self.client, self.bus)
+
+    def downstream(self):
+        """Bus -> client."""
+        pending = []
+        try:
+            for message, fds in read_messages(self.bus):
+                pending.extend(fds)
+                self.observe(message)
+                with self.client_lock:
+                    send_message(self.client, message, pending)
+                close_fds(pending)
+                pending = []
+        except ValueError as err:
+            log("bus déconnecté : %s" % err)
+        except OSError:
+            pass
+        finally:
+            close_fds(pending)
+            shutdown(self.client, self.bus)
+
+
+def serve(client, bus_path, chooser):
     bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         bus.connect(bus_path)
         guid, unix_fd = auth_bus(bus)
-        pending = auth_client(client, guid, unix_fd)
-        if pending:
-            bus.sendall(pending)
+        initial = auth_client(client, guid, unix_fd)
     except (OSError, ConnectionError) as err:
-        print("dbus-uid-relay : connexion abandonnée : %s" % err, file=sys.stderr)
+        log("connexion abandonnée : %s" % err)
         client.close()
         bus.close()
         return
-    upstream = threading.Thread(target=pump, args=(client, bus), daemon=True)
+    relay = Relay(client, bus, chooser)
+    upstream = threading.Thread(target=relay.upstream, args=(initial,), daemon=True)
     upstream.start()
-    pump(bus, client)
+    relay.downstream()
     upstream.join()
+    relay.close()
     client.close()
     bus.close()
 
 
 def main():
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    chooser = None
+    if len(args) == 4 and args[0] == "--filechooser":
+        chooser, args = args[1], args[2:]
+    if len(args) != 2:
         print(__doc__.strip().splitlines()[-1], file=sys.stderr)
         return 2
-    listen_path, bus_path = sys.argv[1], sys.argv[2]
+    listen_path, bus_path = args
 
     def stop(*_):
         try:
@@ -162,10 +485,11 @@ def main():
     server.bind(listen_path)
     os.chmod(listen_path, 0o660)
     server.listen(64)
-    print("prêt : %s -> %s" % (listen_path, bus_path), flush=True)
+    print("prêt : %s -> %s%s" % (listen_path, bus_path,
+                                 " (sélecteur de fichiers : %s)" % chooser if chooser else ""), flush=True)
     while True:
         client, _ = server.accept()
-        threading.Thread(target=serve, args=(client, bus_path), daemon=True).start()
+        threading.Thread(target=serve, args=(client, bus_path, chooser), daemon=True).start()
 
 
 if __name__ == "__main__":
